@@ -1,5 +1,10 @@
+
 store:
     image: aksw/dld-store-virtuoso7
+    environment:
+        PWDDBA: "password"
+    volumes:
+        - /tmp/volumes/virt/:/var/lib/virtuoso/db/
 
 presentation:
     image: aksw/dld-present-ontowiki
