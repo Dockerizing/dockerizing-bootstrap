@@ -1,0 +1,9 @@
+store:
+    image: aksw/dld-store-virtuoso7
+
+presentation:
+    image: aksw/dld-present-ontowiki
+    links:
+        - store
+    ports:
+        - "8080:80"
