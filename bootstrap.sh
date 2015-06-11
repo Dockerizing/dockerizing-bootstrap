@@ -1,4 +1,6 @@
 #!/bin/bash
+# See: http://stackoverflow.com/a/13484149/1666546
+GLOBIGNORE="*"
 
 CONFIG_FILE_BOOTSTRAP="./.bootstrap_config";
 
@@ -93,8 +95,44 @@ function run_virtuoso {
 	set_config RUN_ID_VIRTUOSO $RUN_ID_VIRTUOSO;
 }
 
+# function run_virtuoso_ontowiki {
+
+# }
+
+function run_virtuoso_backup {
+
+	source $CONFIG_FILE_BOOTSTRAP;
+	if [ "$RUN_ID_VIRTUOSO" == "NULL" ]; then
+
+		echo "Run Virtuoso First!";
+		return;
+	fi
+
+	source $CONFIG_FILE_VIRTUOSO;
+
+	crontab="";
+	if [ ! "$BACKUP_CRONTAB" == NULL ]; then
+		crontab="-e CRONTAB=\"$BACKUP_CRONTAB\"";
+	fi
+
+	git_repo="-e GIT_REPO=\"$BACKUP_GIT_REPO\"";
+	git_email="-e GIT_EMAIL=\"$BACHUP_GIT_EMAIL\"";
+	git_name="-e GIT_NAME=\"$BACKUP_GIT_NAME\"";
+
+	RUN_ID_VIRTUOSO_BACKUP="$(docker run -d --link $DOCKER_NAME_VIRTUOSO:virtuoso $crontab $git_repo $git_email $git_name -v $BACKUP_SSH_DIR:/root/.ssh $DOCKER_IMAGE_VIRTUOSO_BACKUP_TAG)";
+
+	if [ ! $? -eq 0 ]; then
+
+		echo "Docker Run: Virtuoso Backup Error!";
+		return;
+	fi
+
+	set_config RUN_ID_VIRTUOSO_BACKUP $RUN_ID_VIRTUOSO_BACKUP;
+}
+
 # Helper 
 # Use this to set the new config value, needs 2 parameters. 
+# Source: http://stackoverflow.com/a/26035652/1666546
 function set_config {
 	sed -i "s/^\($1\s*=\s*\).*\$/\1$2/" $CONFIG_FILE_BOOTSTRAP
 }
@@ -117,6 +155,7 @@ if [ ! -f $CONFIG_FILE_BOOTSTRAP ]; then
 	echo "BOOTSTRAPPED_VIRTUOSO_ONTOWIKI=NO" >> $CONFIG_FILE_BOOTSTRAP;
 	echo "BOOTSTRAPPED_VIRTUOSO_BACKUP=NO" >> $CONFIG_FILE_BOOTSTRAP;
 	echo "RUN_ID_VIRTUOSO=NULL" >> $CONFIG_FILE_BOOTSTRAP;
+	echo "RUN_ID_VIRTUOSO_BACKUP=NULL" >> $CONFIG_FILE_BOOTSTRAP;
 
 	echo "Created Config File!";
 fi
@@ -139,7 +178,36 @@ elif [ "$1" == "run" ] || [ "$1" == "r" ]; then
 
 		#TODO: check if wants to start with onto and backup
 
-		run_virtuoso "test";
+		if [ $# -lt 3 ]; then
+
+			echo "Virtuoso Needs Password!";
+		elif [ $# -eq 3 ]; then
+
+			run_virtuoso $3;
+		elif [ $# -eq 4 ]; then
+
+			if [ "$4" ==  "ontowiki" ] || [ "$4" ==  "o" ]; then
+
+				#run_virtuoso $3;
+				echo "ontowiki"
+			elif [ "$4" ==  "backup" ] || [ "$4" ==  "b" ]; then
+
+				run_virtuoso $3;
+				run_virtuoso_backup;
+			else
+
+				echo "Parameter Unknown! Possible: 'ontowiki' and 'backup'.";
+			fi
+
+		elif [ $# -eq 5 ]; then
+
+			echo "5";
+
+		else
+
+			echo "Wrong Parameter!";
+		fi
+
 	else
 
 		echo "Unknown System!";
