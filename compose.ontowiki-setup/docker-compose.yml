@@ -12,3 +12,12 @@ presentation:
         - store
     ports:
         - "8080:80"
+
+load:
+    image: aksw/dld-load-virtuoso
+    links:
+        - store
+    volumes_from:
+        - store
+    volumes:
+        - /tmp/import:/import
