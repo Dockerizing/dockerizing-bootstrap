@@ -21,3 +21,17 @@ load:
         - store
     volumes:
         - /tmp/import:/import
+#        
+# backup:
+#     image: aksw/dld-backup-virtuoso
+#     environment:
+#         GIT_REPO: "https://github.com/GeorgesAlkhouri/backup-repository.git"
+#         GIT_EMAIL: "cron-backup@htwk-leipzig.de"
+#         GIT_NAME: "Cron Backup"
+#         CRONTAB: "0 0 * * *"
+#     links:
+#         - store
+#     volumes_from:
+#         - store
+#     volumes:
+#         - /tmp/.ssh/:/root/.ssh
