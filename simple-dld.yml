@@ -1,0 +1,6 @@
+setup:
+    store:
+        image: aksw/dld-store-virtuoso7
+        port: 8890
+    load:
+        image: aksw/dld-load-virtuosoload

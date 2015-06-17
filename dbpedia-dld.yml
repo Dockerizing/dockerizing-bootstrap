@@ -1,0 +1,15 @@
+datasets:
+    - dbpedia:
+        uri: "http://dbpedia.org/"
+        location: "http://downloads.dbpedia.org/3.9/de/long_abstracts_en_uris_de.ttl.bz2"
+    - somethingelse:
+        uri: "http://…"
+        file: "dump.ttl"
+
+setup:
+    store: aksw/dld-store-virtuoso7
+    load: aksw/dld-load-virtuosoload
+    present:
+        - aksw/dld-present-ontowiki
+        - aksw/dld-present-pubby
+

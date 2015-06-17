@@ -1,0 +1,24 @@
+datasets:
+    - defaultGraph: dbpedia
+    - dbpedia:
+        graphUri: "http://dbpedia.org/"
+        uri: "http://downloads.dbpedia.org/3.9/de/long_abstracts_en_uris_de.ttl.bz2"
+    - somethingelse:
+        graphUri: "http://…"
+        file: "dump.ttl"
+
+setup:
+    store:
+        image: aksw/dld-store-virtuoso7
+        volume: /tmp/volumes/virtuoso/
+    load:
+        image: aksw/dld-load-virtuosoload
+    backup: …
+    present:
+        ontowiki:
+            image: aksw/dld-present-ontowiki
+            port: 8080
+        pubby:
+            image: aksw/dld-present-pubby
+            port: 8081
+

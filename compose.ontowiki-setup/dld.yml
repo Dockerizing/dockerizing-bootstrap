@@ -1,0 +1,30 @@
+datasets:
+    - defaultGraph: "http://pfarrerbuch.comiles.eu/"
+    - site:
+        uri: "http://pfarrerbuch.comiles.eu/"
+        file: "pfarrerbuch.ttl"
+    - sachsen:
+        uri: "http://pfarrerbuch.comiles.eu/sachsen/"
+        file: "sachsen.ttl"
+    - hp-vocab:
+        uri: "http://purl.org/voc/hp/"
+        file: "hp-vocab.ttl"
+
+setup:
+    store:
+        image: aksw/dld-store-virtuoso7
+        volume: /tmp/volumes/virtuoso/
+        environment:
+            PWDDBA: "aslkdcoiqwecpqow"
+    load:
+        image: aksw/dld-load-virtuoso
+    backup:
+        image: to be done aksw/dld-backup-virtuoso
+        target:
+            git: git@git.aksw.org:/pfarrerbuch.models
+            sshkey: "id_rsa"
+    present:
+        ontowiki:
+            image: to be done aksw/dld-present-pfarrerbuch
+            port: 8080
+
