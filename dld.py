@@ -3,13 +3,34 @@
 import sys
 import getopt
 import yaml
+from collections import defaultdict
+
+def ddict ():
+    return defaultdict(ddict)
+
+def ddict2dict(d):
+    for k, v in d.items():
+        if isinstance(v, dict):
+            d[k] = ddict2dict(v)
+    return dict(d)
 
 class dld:
-
     configuration = None
+    composeConfig = ddict()
 
     def __init__ (self, configuration):
         self.configuration = configuration
+        print(self.configuration)
+        self.provideModels(self.configuration["datasets"])
+
+    def provideModels (self, datasets):
+        defaultGraph = datasets["defaultGraph"]
+        self.composeConfig["store"]["environment"]["DEFAULTGRAPH"] = defaultGraph
+        #self.composeConfig.store.environment.DEFAULTGRAPH = defaultGraph
+
+    def getComposeConfig (self):
+        return self.composeConfig
+
 
 def usage():
     print("please read at http://dld.aksw.org/ for further instructions")
@@ -46,8 +67,7 @@ def main():
     stream = open(configFile, 'r')
     config = yaml.load(stream)
 
-    print(config)
-
+    # Add command line arguments to configuration
     if (uri or file or location):
         if (uri and (file or location)):
             if (not "datasets" in config):
@@ -65,11 +85,14 @@ def main():
             usage()
             sys.exit(2)
 
+    if (not "datasets" in config or not "setup" in config):
+        print("dataset and setup configuration is needed")
+        usage()
+        sys.exit(2)
 
-    print(config)
-
-    # start dld app
+    # start dld process
     app = dld(config)
+    print(yaml.dump(ddict2dict(app.getComposeConfig())))
 
 if __name__ == "__main__":
     main()
