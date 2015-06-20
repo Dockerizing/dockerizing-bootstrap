@@ -2,7 +2,7 @@ datasets:
     - defaultGraph: dbpedia
     - dbpedia:
         graphUri: "http://dbpedia.org/"
-        uri: "http://downloads.dbpedia.org/3.9/de/long_abstracts_en_uris_de.ttl.bz2"
+        location: "http://downloads.dbpedia.org/3.9/de/long_abstracts_en_uris_de.ttl.bz2"
     - somethingelse:
         graphUri: "http://…"
         file: "dump.ttl"
