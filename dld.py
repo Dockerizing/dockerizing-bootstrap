@@ -8,10 +8,8 @@ import uuid
 import shutil
 import logging
 from docker import Client
-from collections import defaultdict
+from collections import defaultdict as ddict
 
-def ddict ():
-    return defaultdict(ddict)
 
 def ddict2dict(d):
     for k, v in d.items():
@@ -19,92 +17,94 @@ def ddict2dict(d):
             d[k] = ddict2dict(v)
     return dict(d)
 
-def mkdirIfNotExists(dir, log):
+
+def ensure_dir_exists(dir, log):
     if not os.path.exists(dir):
         os.makedirs(dir)
     else:
         log.warning("The given path \"" + dir + "\" already exists.")
 
+
 class dld:
     configuration = None
-    composeConfig = ddict()
+    compose_config = ddict()
     workingDirectory = None
 
-    def __init__ (self, configuration, workingDirectory, log = logging.getLogger()):
+    def __init__(self, configuration, working_directory, log=logging.getLogger()):
         self.configuration = configuration
-        self.workingDirectory = workingDirectory
+        self.workingDirectory = working_directory
         self.log = log
         print(self.configuration)
-        mkdirIfNotExists(self.workingDirectory, self.log)
+        ensure_dir_exists(self.workingDirectory, self.log)
         modelsVolume = self.workingDirectory + "/models"
-        mkdirIfNotExists(modelsVolume, self.log)
+        ensure_dir_exists(modelsVolume, self.log)
 
         self.pullImages(self.configuration)
         self.configureCompose(self.configuration, modelsVolume)
-        self.provideModels(self.configuration["datasets"], modelsVolume)
+        self.provide_models(self.configuration["datasets"], modelsVolume)
 
-    def pullImages (self, config):
+    def pullImages(self, config):
         docker = Client()
-        images = docker.images(filters = {"label": "org.aksw.dld"})
+        images = docker.images(filters={"label": "org.aksw.dld"})
 
         print(images)
 
-        #docker.inspect_image
+        # docker.inspect_image
 
-    def configureCompose (self, configuration, modelsVolume):
-        self.configureStore(configuration)
-        self.configureLoad(configuration, modelsVolume)
-        self.configurePresent(configuration)
+    def configureCompose(self, configuration, modelsVolume):
+        self.configure_store(configuration)
+        self.configure_load(configuration, modelsVolume)
+        self.configure_present(configuration)
 
-    def configureStore (self, configuration):
-        if not "store" in configuration["setup"]:
+    def configure_store(self, configuration):
+        if "store" not in configuration["setup"]:
             return
-        defaultGraph = configuration["datasets"]["defaultGraph"]
-        self.composeConfig["store"]["environment"]["DEFAULTGRAPH"] = defaultGraph
-        self.composeConfig["store"].update(configuration["setup"]["store"])
+        default_graph = configuration["datasets"]["defaultGraph"]
 
-    def configureLoad (self, configuration, modelsVolume):
+        self.compose_config["store"]["environment"]["DEFAULTGRAPH"] = default_graph
+        self.compose_config["store"].update(configuration["setup"]["store"])
+
+    def configure_load(self, configuration, models_volume):
         if not "load" in configuration["setup"]:
             return
-        self.composeConfig["load"].update(configuration["setup"]["load"])
-        self.composeConfig["load"]["volumes"] = [modelsVolume + ":/import"]
-        self.composeConfig["load"]["links"] = ["store"]
+        self.compose_config["load"].update(configuration["setup"]["load"])
+        self.compose_config["load"]["volumes"] = [models_volume + ":/import"]
+        self.compose_config["load"]["links"] = ["store"]
 
-    def configurePresent (self, configuration):
+    def configure_present(self, configuration):
         if not "present" in configuration["setup"]:
             return
         for k, v in configuration["setup"]["present"]:
-            self.composeConfig["present_" + k].update(v)
-            self.composeConfig["present_" + k]["links"] = ["store"]
+            self.compose_config["present_" + k].update(v)
+            self.compose_config["present_" + k]["links"] = ["store"]
 
-    def provideModels (self, datasets, modelsVolume):
-        for k,v in datasets.items():
+    def provide_models(self, datasets, models_volume):
+        for k, v in datasets.items():
             if k == "defaultGraph":
                 continue
             if "file" in v:
-                shutil.copyfile(v["file"], modelsVolume + "/" + v["file"])
+                shutil.copyfile(v["file"], models_volume + "/" + v["file"])
                 file = v["file"]
             elif "location" in v:
                 # download v["location"] to modelsVolume
                 print(v["location"])
                 file = k + ".ttl"
-            f = open(modelsVolume + "/" + file + ".graph", "w")
+            f = open(models_volume + "/" + file + ".graph", "w")
             f.write(v["uri"] + "\n")
             f.close()
-
-    def getComposeConfig (self):
-        return self.composeConfig
 
 
 def usage():
     print("please read at http://dld.aksw.org/ for further instructions")
 
+
 def main():
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hc:w:u:f:l:", ["help", "config=", "workingdirectory=", "uri=", "file=", "location="])
+        opts, args = getopt.getopt(sys.argv[1:], "hc:w:u:f:l:",
+                                   ["help", "config=", "workingdirectory=", "uri=", "file=", "location="])
     except getopt.GetoptError as err:
         # print help information and exit:
-        print(err) # will print something like "option -a not recognized"
+        print(err)  # will print something like "option -a not recognized"
         usage()
         sys.exit(2)
 
@@ -114,20 +114,20 @@ def main():
     location = None
     file = None
 
-    for o, a in opts:
-        if o in ("-h", "--help"):
+    for opt, opt_val in opts:
+        if opt in ("-h", "--help"):
             usage()
             sys.exit()
-        elif o in ("-c", "--config"):
-            configFile = a
-        elif o in ("-w", "--workingdirectory"):
-            workingDirectory = a
-        elif o in ("-u", "--uri"):
-            uri = a
-        elif o in ("-f", "--file"):
-            file = a
-        elif o in ("-l", "--location"):
-            location = a
+        elif opt in ("-c", "--config"):
+            configFile = opt_val
+        elif opt in ("-w", "--workingdirectory"):
+            workingDirectory = opt_val
+        elif opt in ("-u", "--uri"):
+            uri = opt_val
+        elif opt in ("-f", "--file"):
+            file = opt_val
+        elif opt in ("-l", "--location"):
+            location = opt_val
         else:
             assert False, "unhandled option"
     # read configuration file
@@ -160,7 +160,8 @@ def main():
 
     # start dld process
     app = dld(config, workingDirectory)
-    print(yaml.dump(ddict2dict(app.getComposeConfig())))
+    print(yaml.dump(ddict2dict(app.compose_config())))
+
 
 if __name__ == "__main__":
     main()
