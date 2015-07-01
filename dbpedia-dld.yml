@@ -1,15 +1,23 @@
 datasets:
-    - dbpedia:
-        uri: "http://dbpedia.org/"
-        location: "http://downloads.dbpedia.org/3.9/de/long_abstracts_en_uris_de.ttl.bz2"
-    - somethingelse:
-        uri: "http://…"
-        file: "dump.ttl"
+    dbpedia-homepages:
+        graph_name: "http://dbpedia.org"
+        file: "sample-data/homepages_en.ttl.gz"
 
-setup:
-    store: aksw/dld-store-virtuoso7
-    load: aksw/dld-load-virtuosoload
+    dbpedia-inter-language-links-old:
+        file: "sample-data/old_interlanguage_links_en.nt.gz"
+
+components:
+    store:
+        image: aksw/dld-store-virtuoso7
+        environment:
+            PWDDBA: herakiel
+    load: aksw/dld-load-virtuoso
     present:
-        - aksw/dld-present-ontowiki
-        - aksw/dld-present-pubby
+        - {
+            image: aksw/dld-present-ontowiki,
+            ports: ["88:80"],
+        }
+        #- image: aksw/dld-present-pubby
 
+settings:
+    default_graph: "http://dbpedia.org"

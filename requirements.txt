@@ -1,2 +1,3 @@
 docker-py >= 1.0
 pyyaml
+httplib2
