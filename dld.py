@@ -184,6 +184,8 @@ class ComposeConfigGenerator(object):
     def configure_load(self):
         def additional_config(compose_container_spec):
             compose_container_spec['links'].append('store')
+            # TODO This might also be done by reading the labels of the load container resp. for the other categories.
+            # A stub for loading the images and reading the labels is in pull_images
             compose_container_spec['volumes_from'].append('store')
             compose_container_spec['volumes'] = [osp.abspath(self.models_volume_dir) + ":/import"]
 
