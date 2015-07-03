@@ -345,9 +345,11 @@ def main():
         if uri and (file or location):
             if "datasets" not in config:
                 config["datasets"] = {}
+            if "settings" not in config:
+                config["settings"] = {}
             if "default" not in config["datasets"]:
                 config["datasets"]["default"] = {}
-            config["datasets"]["defaultGraph"] = uri
+            config["settings"]["default_graph"] = uri
             config["datasets"]["default"]["uri"] = uri
             if file:
                 config["datasets"]["default"]["file"] = file
