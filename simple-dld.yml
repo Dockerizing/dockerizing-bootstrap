@@ -1,6 +1,6 @@
-setup:
+components:
     store:
         image: aksw/dld-store-virtuoso7
-        port: 8890
+        ports: ["8895:8890"]
     load:
-        image: aksw/dld-load-virtuosoload
+        image: aksw/dld-load-virtuoso
