@@ -1,5 +1,6 @@
-#! /usr/bin/env python3
+#! /usr/bin/env python
 
+from __future__ import print_function, division
 import sys
 import os
 from os import path as osp
@@ -8,7 +9,10 @@ import getopt
 import shutil
 import re
 import logging
-from urllib import parse as urlparse
+try:
+    import urlparse
+except ImportError:
+    from urllib import parse as urlparse
 import tempfile
 
 import yaml
@@ -18,8 +22,7 @@ from docker import Client
 LAST_WORD_PATTERN = re.compile('[a-zA-Z0-9]+$')
 ARCHIVE_SUFFIX_PATTERN = re.compile('^(.*?)(\.(?:(?:bz2)|(?:gz)))$')
 RDF_SERIALISAION_PATTERN = re.compile('^(.*?)(\.(?:(?:nt)|(?:ttl)|(?:nq)|(?:rdf)|(?:owl)|(?:jsonld)|(?:json)|(?:xml)))$')
-YAML_FILETYPE_PATTERN = re.compile('^(.*?)(\.(?:(?:yml)|(?:yaml)))')
-
+YAML_FILETYPE_PATTERN = re.compile('^(.*?)(\.(?:(?:yml)|(?:yaml)))$')
 
 
 class ComposeConfigDefaultDict(dict):
@@ -74,7 +77,7 @@ def alpha_gen():
         yield mem
 
 def _strip_when_match(pattern, str):
-    match_attempt = pattern.fullmatch(str)
+    match_attempt = pattern.match(str)
     return match_attempt and match_attempt.group(1) or str
 
 def strip_ld_dump_type_suffixes(filename):
