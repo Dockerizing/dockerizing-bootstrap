@@ -9,7 +9,15 @@ httplib2==0.9.1
 PyYAML==3.11
 
 To use pip to ensure up-to-date versions of the requirements installed, invoke
+
     pip install -Ur requirements.txt
+
+[pyenv](https://github.com/yyuu/pyenv) can be useful to be able to obtain a
+more recent Python version not provisioned by your package manager on *nix.
+It also helps to circumvent interferences by providing an easy possibilty
+to set up an isolated `virtualenv` for the use of `dld.py`. 
+(The [pyenv installer](https://github.com/yyuu/pyenv-installer) is an easy
+ way to set pyenv up.) 
 
 
 ## notes for developers
