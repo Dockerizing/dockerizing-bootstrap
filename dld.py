@@ -9,6 +9,7 @@ import getopt
 import shutil
 import re
 import logging
+
 try:
     import urlparse
 except ImportError:
@@ -21,7 +22,8 @@ from docker import Client
 
 LAST_WORD_PATTERN = re.compile('[a-zA-Z0-9]+$')
 ARCHIVE_SUFFIX_PATTERN = re.compile('^(.*?)(\.(?:(?:bz2)|(?:gz)))$')
-RDF_SERIALISAION_PATTERN = re.compile('^(.*?)(\.(?:(?:nt)|(?:ttl)|(?:nq)|(?:rdf)|(?:owl)|(?:jsonld)|(?:json)|(?:xml)))$')
+RDF_SERIALISAION_PATTERN = re.compile(
+    '^(.*?)(\.(?:(?:nt)|(?:ttl)|(?:nq)|(?:rdf)|(?:owl)|(?:jsonld)|(?:json)|(?:xml)))$')
 YAML_FILETYPE_PATTERN = re.compile('^(.*?)(\.(?:(?:yml)|(?:yaml)))$')
 
 
@@ -43,7 +45,7 @@ class ComposeConfigDefaultDict(dict):
 
     def __missing__(self, key):
         if key in self.__class__._list_keys:
-            default_val =  list()
+            default_val = list()
         elif key in self.__class__._dict_keys:
             default_val = dict()
         elif self.__class__._should_recurse(key):
@@ -52,6 +54,7 @@ class ComposeConfigDefaultDict(dict):
             raise RuntimeError("undefined default for key: " + key)
         self[key] = default_val
         return default_val
+
 
 def ddict2dict(d):
     for k, v in d.items():
@@ -66,8 +69,10 @@ def ensure_dir_exists(dir, log):
     else:
         log.warning("The given path '{d}' already exists.".format(d=dir))
 
+
 def is_dict_like(obj):
     return hasattr(obj, 'keys') and callable(obj.keys)
+
 
 def alpha_gen():
     mem = 'A'
@@ -76,9 +81,11 @@ def alpha_gen():
         mem = chr(ord(mem) + 1)
         yield mem
 
+
 def _strip_when_match(pattern, str):
     match_attempt = pattern.match(str)
     return match_attempt and match_attempt.group(1) or str
+
 
 def strip_ld_dump_type_suffixes(filename):
     res = filename
@@ -86,8 +93,10 @@ def strip_ld_dump_type_suffixes(filename):
     res = _strip_when_match(RDF_SERIALISAION_PATTERN, res)
     return res
 
+
 def strip_compression_suffixes(filename):
     return _strip_when_match(ARCHIVE_SUFFIX_PATTERN, filename)
+
 
 def _strip_config_suffixes(filename):
     res = filename
@@ -95,6 +104,7 @@ def _strip_config_suffixes(filename):
     if res.endswith('-dld'):
         res = res[:-4]
     return res
+
 
 class ComposeConfigGenerator(object):
     def __init__(self, configuration, working_directory, log=logging.getLogger()):
@@ -115,8 +125,6 @@ class ComposeConfigGenerator(object):
     def pull_images(self, config):
         docker = Client()
         images = docker.images(filters={"label": "org.aksw.dld"})
-
-        print(images)
 
         # docker.inspect_image
 
@@ -206,7 +214,7 @@ class ComposeConfigGenerator(object):
         try:
             return "present" + next(LAST_WORD_PATTERN.finditer(image_name)).group(0)
         except StopIteration:  # unable to find proper image suffix
-            try: #lazy init for __present_suffix_gen
+            try:  # lazy init for __present_suffix_gen
                 self.__present_suffix_gen
             except AttributeError:
                 self.__present_suffix_gen = alpha_gen()
@@ -253,9 +261,9 @@ class ComposeConfigGenerator(object):
     def prepare_import_data(self, datasets):
         def check_for_duplicate_import(basename, src_locator):
             stripped_name = strip_ld_dump_type_suffixes(basename)
-            if stripped_name  in self._dataset_basenames:
+            if stripped_name in self._dataset_basenames:
                 msg_tmpl = "duplicate source '{src}' (stripped: '{str}')"
-                raise RuntimeError(msg_tmpl.format(src = src_locator, str=strip_ld_dump_type_suffixes(basename)))
+                raise RuntimeError(msg_tmpl.format(src=src_locator, str=strip_ld_dump_type_suffixes(basename)))
             else:
                 self._dataset_basenames.add(stripped_name)
 
@@ -289,7 +297,7 @@ class ComposeConfigGenerator(object):
                 http_client = self._http_client(timeout=10)
             else:
                 msg_tmpl = "No data source ('file' or 'location' key) defined for dataset:\n{ds}"
-                raise RuntimeError(msg_tmpl.format(ds = dataset_config))
+                raise RuntimeError(msg_tmpl.format(ds=dataset_config))
 
             graph_name = dataset_config.get('graph_name')
             if graph_name and graph_file is not default_graph_name:
@@ -303,9 +311,9 @@ def usage():
     print("please read at http://dld.aksw.org/ for further instructions")
 
 
-def main():
+def main(args=sys.argv[1:]):
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hc:w:u:f:l:",
+        opts, args = getopt.getopt(args, "hc:w:u:f:l:",
                                    ["help", "config=", "workingdirectory=", "uri=", "file=", "location="])
     except getopt.GetoptError as err:
         # print help information and exit:
@@ -314,10 +322,10 @@ def main():
         sys.exit(2)
 
     config_file = "dld.yml"
-    working_directory = None
-    uri = None
-    location = None
-    file = None
+    wd_from_cli = None
+    uri_from_cli = None
+    location_from_cli = None
+    file_from_cli = None
 
     for opt, opt_val in opts:
         if opt in ("-h", "--help"):
@@ -326,50 +334,50 @@ def main():
         elif opt in ("-c", "--config"):
             config_file = opt_val
         elif opt in ("-w", "--workingdirectory"):
-            working_directory = opt_val
+            wd_from_cli = opt_val
         elif opt in ("-u", "--uri"):
-            uri = opt_val
+            uri_from_cli = opt_val
         elif opt in ("-f", "--file"):
-            file = opt_val
+            file_from_cli = opt_val
         elif opt in ("-l", "--location"):
-            location = opt_val
+            location_from_cli = opt_val
         else:
             assert False, "unhandled option"
     # read configuration file
 
-    if not working_directory:
-        working_directory = 'wd-' + _strip_config_suffixes(config_file)
+    if not wd_from_cli:
+        wd_from_cli = 'wd-' + _strip_config_suffixes(config_file)
 
     with open(config_file, 'r') as config_fd:
-        config = yaml.load(config_fd)
+        user_config = yaml.load(config_fd)
 
     # Add command line arguments to configuration
-    if uri or file or location:
-        if uri and (file or location):
-            if "datasets" not in config:
-                config["datasets"] = {}
-            if "settings" not in config:
-                config["settings"] = {}
-            if "default" not in config["datasets"]:
-                config["datasets"]["default"] = {}
-            config["settings"]["default_graph"] = uri
-            config["datasets"]["default"]["uri"] = uri
-            if file:
-                config["datasets"]["default"]["file"] = file
-            elif location:
-                config["datasets"]["default"]["location"] = location
+    if any((uri_from_cli, file_from_cli, location_from_cli)):
+        if uri_from_cli and (file_from_cli or location_from_cli):
+            if "datasets" not in user_config:
+                user_config["datasets"] = {}
+            if "settings" not in user_config:
+                user_config["settings"] = {}
+            if "default" not in user_config["datasets"]:
+                user_config["datasets"]["cli"] = {}
+            user_config["settings"]["default_graph"] = uri_from_cli
+            user_config["datasets"]["cli"]["uri"] = uri_from_cli
+            if file_from_cli:
+                user_config["datasets"]["cli"]["file"] = file_from_cli
+            elif location_from_cli:
+                user_config["datasets"]["cli"]["location"] = location_from_cli
         else:
             print("only the combinations uri and file or uri and location are permitted")
             usage()
             sys.exit(2)
 
-    if "datasets" not in config or "components" not in config:
+    if "datasets" not in user_config or "components" not in user_config:
         print("dataset and setup configuration is needed")
         usage()
         sys.exit(2)
 
     # start dld process
-    configurator = ComposeConfigGenerator(config, working_directory)
+    configurator = ComposeConfigGenerator(user_config, wd_from_cli)
     # transformation back to standard dict required to keep pyyaml from serialising class metadata
     docker_compose_config = ddict2dict(configurator.compose_config)
     print(yaml.dump(docker_compose_config))

@@ -1,0 +1,4 @@
+@prefix test: <http://dld.aksw.org/testing#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+test:TheQuestion test:hasAnswer "42"^^xsd:int .
