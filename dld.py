@@ -9,6 +9,11 @@ import getopt
 import shutil
 import re
 import logging
+import logging.config
+import socket
+from urllib import urlretrieve
+from collections import defaultdict
+from textwrap import dedent
 
 try:
     import urlparse
@@ -25,6 +30,58 @@ ARCHIVE_SUFFIX_PATTERN = re.compile('^(.*?)(\.(?:(?:bz2)|(?:gz)))$')
 RDF_SERIALISAION_PATTERN = re.compile(
     '^(.*?)(\.(?:(?:nt)|(?:ttl)|(?:nq)|(?:rdf)|(?:owl)|(?:jsonld)|(?:json)|(?:xml)))$')
 YAML_FILETYPE_PATTERN = re.compile('^(.*?)(\.(?:(?:yml)|(?:yaml)))$')
+
+PROJECT_DIR = osp.dirname(osp.realpath(__file__))
+DEV_MODE = bool(os.environ.get('DLD_DEV', ''))
+LOG_SETTINGS = {
+    'version': 1,
+    'handlers': {
+        'cli_user_console': {
+            'class': 'logging.StreamHandler',
+            'level': 'INFO',
+            'formatter': 'cli_user',
+            'stream': 'ext://sys.stdout',
+        },
+        'dev_console': {
+            'class': 'logging.StreamHandler',
+            'level': 'DEBUG',
+            'formatter': 'detailed',
+            'stream': 'ext://sys.stdout',
+        },
+        'file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'level': 'DEBUG',
+            'formatter': 'detailed',
+            'filename': osp.join(PROJECT_DIR, 'logs', 'complete.log'),
+            'mode': 'a',
+            'maxBytes': 10485760,
+            'backupCount': 5,
+        },
+    },
+    'formatters': {
+        'cli_user': {
+            'format': 'DLD %(levelname)-8s %(message)s'
+        },
+        'dev': {
+            'format': '%(asctime)s %(module)s [%(levelname)s]: $(message)s'
+        },
+        'detailed': {
+            'format': '%(asctime)s %(module)-17s line:%(lineno)-4d ' \
+                      '%(levelname)-8s %(message)s',
+        },
+    },
+    'loggers': {
+        'dld': {
+            'level': DEV_MODE and 'DEBUG' or 'INFO',
+            'handlers': DEV_MODE and ['dev_console', 'file'] or ['cli_user_console'],
+        }
+    }
+}
+DLD_LOG = logging.getLogger('dld')
+
+
+def logging_init():
+    logging.config.dictConfig(LOG_SETTINGS)
 
 
 class ComposeConfigDefaultDict(dict):
@@ -67,7 +124,7 @@ def ensure_dir_exists(dir, log):
     if not os.path.exists(dir):
         os.makedirs(dir)
     else:
-        log.warning("The given path '{d}' already exists.".format(d=dir))
+        DEV_MODE and log.warning("The given path '{d}' already exists.".format(d=dir))
 
 
 def is_dict_like(obj):
@@ -107,19 +164,21 @@ def _strip_config_suffixes(filename):
 
 
 class ComposeConfigGenerator(object):
-    def __init__(self, configuration, working_directory, log=logging.getLogger()):
+    def __init__(self, configuration, working_directory):
         self.configuration = configuration
         self.working_directory = working_directory
-        self.log = log
+        self.log = logging.getLogger('dld.' + self.__class__.__name__)
         self.compose_config = ComposeConfigDefaultDict()
         self._dataset_basenames = set()
-        print("init - passed configuration:\n{}".format(self.configuration))
+        self._config_done = defaultdict(lambda: False)
+        self.log.debug("init - passed configuration:\n{}".format(self.configuration))
         ensure_dir_exists(self.working_directory, self.log)
         self.models_volume_dir = osp.join(self.working_directory, 'models')
         ensure_dir_exists(self.models_volume_dir, self.log)
 
-        self.pull_images(self.configuration)
-        self.configure_compose()
+    def run(self):
+        # self.pull_images(self.configuration) #not using image metadata yet
+        self.create_compose_config()
         self.prepare_import_data(self.configuration["datasets"])
 
     def pull_images(self, config):
@@ -184,23 +243,54 @@ class ComposeConfigGenerator(object):
         if callable(additional_config_thunk):
             additional_config_thunk(compose_container_spec)
 
+    def create_compose_config(self):
+        self.configure_compose()
+        # transformation back to standard dict required to keep pyyaml from serialising class metadata
+        docker_compose_config = ddict2dict(self.compose_config)
+        DLD_LOG.debug(yaml.dump(docker_compose_config))
+        with open(osp.join(self.working_directory, 'docker-compose.yml'), mode='w') as compose_fd:
+            yaml.dump(docker_compose_config, compose_fd)
+
     def configure_compose(self):
         self.configure_store()
         self.configure_load()
         self.configure_present()
 
+    @property
+    def wd_ready_message(self):
+        msg_tmpl = dedent(""" \
+        Your docker-compose configuration and import data has been set up at '{wd}'.
+        Now change into that directory and invoke `docker-compose up -d` to start  the components
+        (possibly triggering also the data import process)
+
+        `docker compose ps` will give you an overview for the component containers and tell you
+        which host ports to use to reach your components.
+
+        `docker compose logs -f` will allow you to inspect the state of the setup processes.
+
+        Have fun!""")
+        abs_wd = osp.realpath(self.working_directory)
+        if DEV_MODE:
+            return "set up completed at {wd}".format(wd=abs_wd)
+        else:
+            return msg_tmpl.format(wd=abs_wd)
+
     def configure_store(self):
-        self._configure_singleton_component('store')
+        if not self._config_done['store']:
+            self._configure_singleton_component('store')
+            self._config_done['store'] = True
 
     def configure_load(self):
         def additional_config(compose_container_spec):
             compose_container_spec['links'].append('store')
             # TODO This might also be done by reading the labels of the load container resp. for the other categories.
-            # A stub for loading the images and reading the labels is in pull_images
+            # A stub for loding the images and reading the labels is in pull_images
             compose_container_spec['volumes_from'].append('store')
             compose_container_spec['volumes'] = [osp.abspath(self.models_volume_dir) + ":/import"]
 
-        self._configure_singleton_component('load', additional_config_thunk=additional_config)
+        if not self._config_done['load']:
+            self._configure_singleton_component('load', additional_config_thunk=additional_config)
+            self._config_done['load'] = True
 
     def _extract_last_word(str, fallback=None):
         try:
@@ -224,7 +314,7 @@ class ComposeConfigGenerator(object):
         def additional_config(compose_container_spec):
             compose_container_spec['links'].append('store')
 
-        if not "present" in self.configuration["components"]:
+        if (not "present" in self.configuration["components"]) or self._config_done['present']:
             return
         present_component_group = self.configuration["components"]['present']
         if is_dict_like(present_component_group):
@@ -251,6 +341,7 @@ class ComposeConfigGenerator(object):
                 self.compose_config[compose_name] = compose_container_spec
                 self._update_container_config(image_desc, compose_container_spec,
                                               additional_config_thunk=additional_config)
+        self._config_done['present'] = True
 
     @classmethod
     def _http_client(cls, **kwargs):
@@ -289,12 +380,18 @@ class ComposeConfigGenerator(object):
                 loc_url = dataset_config['location']
                 parsed_url = urlparse.urlparse(loc_url)
                 if parsed_url.scheme not in ['http', 'https']:
-                    msg_tmpl = "location given for dataset {ds} does not appear to be a http(s)-URL:\n{loc}"
-                    raise RuntimeError(msg_tmpl.format(ds=dataset_name, loc=loc_url))
+                    msg_tmpl = "location given for dataset {ds} does not appear to be a http(s)-URL:\n{loc}\n{ex}"
+                    error = RuntimeError(msg_tmpl.format(ds=dataset_name, loc=loc_url))
+                    self.log.error(msg_tmpl.format(ds=dataset_name, loc=loc_url, ex=error))
 
                 basename = parsed_url.path and parsed_url.path.split('/')[-1] or parsed_url.netloc
                 check_for_duplicate_import(basename, loc_url)
-                http_client = self._http_client(timeout=10)
+                # this (hopefully) sets a sensible 1 minute default for connection inactivity
+                # TODO: create a context object that sets this timeout and restores previous timeout in __exit__
+                socket.setdefaulttimeout(60)
+                self.log.info("starting download: {u}".format(u=loc_url))
+                urlretrieve(loc_url, osp.join(self.models_volume_dir, basename))
+                self.log.info("download finished: {u}".format(u=loc_url))
             else:
                 msg_tmpl = "No data source ('file' or 'location' key) defined for dataset:\n{ds}"
                 raise RuntimeError(msg_tmpl.format(ds=dataset_config))
@@ -308,7 +405,7 @@ class ComposeConfigGenerator(object):
 
 
 def usage():
-    print("please read at http://dld.aksw.org/ for further instructions")
+    DLD_LOG.warning("please read at http://dld.aksw.org/ for further instructions")
 
 
 def main(args=sys.argv[1:]):
@@ -317,7 +414,7 @@ def main(args=sys.argv[1:]):
                                    ["help", "config=", "workingdirectory=", "uri=", "file=", "location="])
     except getopt.GetoptError as err:
         # print help information and exit:
-        print(err)  # will print something like "option -a not recognized"
+        DLD_LOG.error(err)  # will print something like "option -a not recognized"
         usage()
         sys.exit(2)
 
@@ -346,7 +443,7 @@ def main(args=sys.argv[1:]):
     # read configuration file
 
     if not wd_from_cli:
-        wd_from_cli = 'wd-' + _strip_config_suffixes(config_file)
+        wd_from_cli = 'wd-' + _strip_config_suffixes(osp.basename(config_file))
 
     with open(config_file, 'r') as config_fd:
         user_config = yaml.load(config_fd)
@@ -367,23 +464,20 @@ def main(args=sys.argv[1:]):
             elif location_from_cli:
                 user_config["datasets"]["cli"]["location"] = location_from_cli
         else:
-            print("only the combinations uri and file or uri and location are permitted")
+            DLD_LOG.error("only the combinations uri and file or uri and location are permitted")
             usage()
             sys.exit(2)
 
     if "datasets" not in user_config or "components" not in user_config:
-        print("dataset and setup configuration is needed")
+        DLD_LOG.error("dataset and setup configuration is needed")
         usage()
         sys.exit(2)
 
     # start dld process
     configurator = ComposeConfigGenerator(user_config, wd_from_cli)
-    # transformation back to standard dict required to keep pyyaml from serialising class metadata
-    docker_compose_config = ddict2dict(configurator.compose_config)
-    print(yaml.dump(docker_compose_config))
-    with open(osp.join(configurator.working_directory, 'docker-compose.yml'), mode='w') as compose_fd:
-        yaml.dump(docker_compose_config, compose_fd)
-
+    configurator.run()
+    DLD_LOG.info(configurator.wd_ready_message)
 
 if __name__ == "__main__":
+    logging_init()
     main()

@@ -1,6 +1,5 @@
 from __future__ import print_function, division
 import tempfile
-import dld
 import shutil
 import os
 from os import path as osp
@@ -8,12 +7,16 @@ from glob import glob
 import re
 import time
 import threading
+import logging
 from subprocess import Popen, PIPE
+
 from invoke import run
-import logging as log
 from SPARQLWrapper import SPARQLWrapper, JSON
 
+import dld
+
 TEST_DIR = osp.dirname(osp.realpath(__file__))
+TEST_LOG = logging.getLogger('dld.test')
 VOS_IMPORT_COMPLETED_PATTERN = re.compile(r'done loading graphs \(start hanging around idle\)')
 
 
@@ -62,24 +65,42 @@ def test_dbpedia_local_archives():
             * conversion bz2 -> gz required (at least for VOS)
             * different rdf serialisation formats among files to import (nt and ttl)
     """
-    test_name = 'test_simple_config_default_config_name_wd_is_cwd'
+    test_name = 'test_dbpedia_local_archives'
     config_file = osp.join(TEST_DIR, 'dbpedia-local-dld.yml')
     dld_args = ['-c', config_file]
     expected_counts = {'http://dbpedia.org': (791040, 791048)
                        }
     with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
                                   import_timeout=300) as test:
-        log.debug("glob results: {}".format(glob(osp.join(TEST_DIR, '{homepages,old_interlanguage}*bz2'))))
+        TEST_LOG.debug("glob results: {}".format(glob(osp.join(TEST_DIR, '{homepages,old_interlanguage}*bz2'))))
         for archive in ['homepages_en.ttl.bz2', 'old_interlanguage_links_en.nt.bz2']:
             src = osp.join(TEST_DIR, archive)
-            log.debug("copying {a} to {tmp}".format(a=src, tmp=test.tmpdir))
+            TEST_LOG.debug("copying {a} to {tmp}".format(a=src, tmp=test.tmpdir))
             shutil.copy(src, test.tmpdir)
+        test.run()
+
+
+def test_dbpedia_download_archives():
+    """
+        test scenario for:
+            * download archives from official download server
+            * conversion bz2 -> gz required (at least for VOS)
+            * different rdf serialisation formats among files to import (nt and ttl)
+    """
+    test_name = 'test_dbpedia_download_archives'
+    config_file = osp.join(TEST_DIR, 'dbpedia-download-dld.yml')
+    dld_args = ['-c', config_file]
+    expected_counts = {'http://dbpedia.org': (791040, 791048)
+                       }
+    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
+                                  import_timeout=300) as test:
         test.run()
 
 
 class ImportIntegrationTest(object):
     def __init__(self, test_name='import_test', dld_args=[], import_timeout=10,
                  store_port=8891, expected_triple_counts=dict(), keep_tmpdir=False, ):
+        self.log = logging.getLogger('dld.test.' + self.__class__.__name__)
         self._import_timed_out = False
         self.keep_tmpdir = keep_tmpdir
         self.test_name = test_name
@@ -99,7 +120,7 @@ class ImportIntegrationTest(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._containers_created:
             os.chdir(self.tmpdir)
-            print('cleaning up containers')
+            self.log.debug('cleaning up containers')
             run("docker-compose -p {pn} kill".format(pn=self.compose_name), hide=False, warn=True)
             run("docker-compose -p {pn} rm -f".format(pn=self.compose_name), hide=False, warn=True)
         if self.keep_tmpdir is not True:
@@ -152,14 +173,14 @@ class ImportIntegrationTest(object):
 
         def look_for_completion_message():
             for line in iter(logtail.stdout.readline, b''):
-                log.debug("({t}) read line: {l}".format(l=line, t=time.time()))
+                TEST_LOG.debug("({t}) read line: {l}".format(l=line, t=time.time()))
                 if timed_out.is_set():
                     return False
                 elif self._is_import_completed_msg(line):
                     return True
 
         def set_timed_out():
-            log.debug("set timed_out event")
+            TEST_LOG.debug("set timed_out event")
             timed_out.set()
 
         timer = threading.Timer(self.import_timeout, set_timed_out)
@@ -185,13 +206,13 @@ class ImportIntegrationTest(object):
 
         actual_counts = bindings_to_dict(result['results']['bindings'])
 
-        print(actual_counts)
+        self.log.debug(actual_counts)
         for graph_name, expected_count in self.expected_triple_counts.items():
             if isinstance(expected_count, tuple) and len(expected_count) is 2:
                 actual_counts.get(graph_name, 0).should.be.within(*expected_count)
             elif isinstance(expected_count, int):
                 actual_counts.get(graph_name, 0).should.equal(expected_count)
-        print('finished verifying counts')
+        self.log.debug('finished verifying counts')
 
     def run(self):
         self.run_dld()
@@ -202,3 +223,9 @@ class ImportIntegrationTest(object):
 
 def _import_integration_test(*args, **kwargs):
     return ImportIntegrationTest(*args, **kwargs)
+
+
+if __name__ == '__main__':
+    dld.logging_init()
+    test_simple_config_with_dataset_from_cli_args()
+    test_dbpedia_download_archives()

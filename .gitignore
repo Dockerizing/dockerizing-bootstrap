@@ -1,5 +1,13 @@
 .DS_Store
 
+# Python and pyenv
+*.pyc
+.python-version
+
 # Intellij project files
 .idea/
 *.iml
+
+# temporary files
+logs/
+wd-*/

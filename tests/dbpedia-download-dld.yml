@@ -1,0 +1,24 @@
+datasets:
+    dbpedia-homepages:
+        graph_name: "http://dbpedia.org"
+        location: "http://data.dws.informatik.uni-mannheim.de/dbpedia/2014/en/homepages_en.ttl.bz2"
+
+    dbpedia-inter-language-links-old:
+        location: "http://data.dws.informatik.uni-mannheim.de/dbpedia/2014/en/old_interlanguage_links_en.nt.bz2"
+
+components:
+    store:
+        image: aksw/dld-store-virtuoso7
+        ports: ["8891:8890"]
+        environment:
+            PWDDBA: herakiel
+    load: aksw/dld-load-virtuoso
+    present:
+        - {
+            image: aksw/dld-present-ontowiki,
+            ports: ["8081:80"],
+        }
+        #- image: aksw/dld-present-pubby
+
+settings:
+    default_graph: "http://dbpedia.org"
