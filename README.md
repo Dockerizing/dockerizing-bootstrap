@@ -28,5 +28,8 @@ Use `nosetests` to run some coarse integrations tests defined in the `tests`
 directory. Some tests depend von DBpedia dump data that can be retrieved by
 invoking the `tests/download_dbpedia_samples.sh` script.
 
-
-**Not finished, yet**.
+This tool utilized the Python `logging` libraries. By default, only selective
+message with lean log formatting is put to stdout for non-developer usage.
+You can trigger complete logging of all log messages to the `logs/` directory
+and also debug messages to stdout my setting the `DLD_DEV` environment variable
+(to any value different from the null-string).
