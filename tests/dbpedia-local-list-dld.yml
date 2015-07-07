@@ -1,0 +1,20 @@
+datasets:
+    dbpedia-datasets:
+        file_list: "dbpedia_sample_datasets_local.list"
+
+components:
+    store:
+        image: aksw/dld-store-virtuoso7
+        ports: ["8891:8890"]
+        environment:
+            PWDDBA: herakiel
+    load: aksw/dld-load-virtuoso
+    present:
+        - {
+            image: aksw/dld-present-ontowiki,
+            ports: ["8081:80"],
+        }
+        #- image: aksw/dld-present-pubby
+
+settings:
+    default_graph: "http://dbpedia.org"

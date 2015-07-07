@@ -58,6 +58,24 @@ def test_simple_config_default_config_name_wd_is_cwd():
         test.run()
 
 
+def test_simple_config_no_default_graph():
+    """
+        test scenario for:
+            * only a single local file specified in config
+            * do default graph specified
+            * relative path for default config and file to import
+            * do no generate separate working subdirectory
+    """
+    test_name = 'test_simple_config_default_config_name_wd_is_cwd'
+    import_file_src = osp.join(TEST_DIR, 'single_triple.ttl')
+    config_file_src = osp.join(TEST_DIR, 'simple-graph-defined-dld.yml')
+    dld_args = ['-w', '.', '-c', config_file_src]
+    expected_counts = {'http://dld.aksw.org/testing#': 1}
+    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts) as test:
+        shutil.copy(import_file_src, test.tmpdir)
+        test.run()
+
+
 def test_dbpedia_local_archives():
     """
         test scenario for:
@@ -72,11 +90,30 @@ def test_dbpedia_local_archives():
                        }
     with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
                                   import_timeout=300) as test:
-        TEST_LOG.debug("glob results: {}".format(glob(osp.join(TEST_DIR, '{homepages,old_interlanguage}*bz2'))))
         for archive in ['homepages_en.ttl.bz2', 'old_interlanguage_links_en.nt.bz2']:
-            src = osp.join(TEST_DIR, archive)
-            TEST_LOG.debug("copying {a} to {tmp}".format(a=src, tmp=test.tmpdir))
-            shutil.copy(src, test.tmpdir)
+            shutil.copy(osp.join(TEST_DIR, archive), test.tmpdir)
+        test.run()
+
+
+def test_dbpedia_local_archives_list():
+    """
+        test scenario for:
+            * local archives to import defined in listing file
+            * conversion bz2 -> gz required (at least for VOS)
+            * different rdf serialisation formats among files to import (nt and ttl)
+    """
+    test_name = 'test_dbpedia_local_archives_list'
+    config_file = osp.join(TEST_DIR, 'dbpedia-local-list-dld.yml')
+    dld_args = ['-c', config_file]
+    expected_counts = {'http://dbpedia.org': (791040, 791048)
+                       }
+    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
+                                  import_timeout=300) as test:
+        with open(osp.join(test.tmpdir, 'dbpedia_sample_datasets_local.list'), 'w') as file_list:
+            for archive in ["homepages_en.ttl.bz2", 'old_interlanguage_links_en.nt.bz2', ]:
+                filepath = osp.join(TEST_DIR, archive)
+                osp.isfile(filepath).should.be(True)
+                file_list.write(filepath + '\n')
         test.run()
 
 
@@ -97,12 +134,33 @@ def test_dbpedia_download_archives():
         test.run()
 
 
+def test_dbpedia_download_archives_list():
+    """
+        test scenario for:
+            * download archives from official download server
+            * conversion bz2 -> gz required (at least for VOS)
+            * different rdf serialisation formats among files to import (nt and ttl)
+    """
+    test_name = 'test_dbpedia_download_archives_list'
+    config_file = osp.join(TEST_DIR, 'dbpedia-download-list-dld.yml')
+    list_file = osp.join(TEST_DIR, 'dbpedia_sample_datasets_download.list')
+    dld_args = ['-c', config_file]
+    expected_counts = {'http://dbpedia.org': (791040, 791048)
+                       }
+    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
+                                  import_timeout=300) as test:
+        shutil.copy(list_file, osp.join(test.tmpdir, 'dbpedia_sample_datasets_download.list'))
+        test.run()
+
+
 class ImportIntegrationTest(object):
     def __init__(self, test_name='import_test', dld_args=[], import_timeout=10,
-                 store_port=8891, expected_triple_counts=dict(), keep_tmpdir=False, ):
+                 store_port=8891, expected_triple_counts=dict(), keep_tmpdir=False,
+                 keep_containers=False):
         self.log = logging.getLogger('dld.test.' + self.__class__.__name__)
         self._import_timed_out = False
         self.keep_tmpdir = keep_tmpdir
+        self.keep_containers = keep_containers
         self.test_name = test_name
         self.compose_name = test_name.replace('_', '')
         self.dld_args = dld_args
@@ -118,7 +176,7 @@ class ImportIntegrationTest(object):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._containers_created:
+        if self._containers_created and (self.keep_containers is not True):
             os.chdir(self.tmpdir)
             self.log.debug('cleaning up containers')
             run("docker-compose -p {pn} kill".format(pn=self.compose_name), hide=False, warn=True)
@@ -227,5 +285,9 @@ def _import_integration_test(*args, **kwargs):
 
 if __name__ == '__main__':
     dld.logging_init()
+    import sure
+
     test_simple_config_with_dataset_from_cli_args()
-    test_dbpedia_download_archives()
+    test_simple_config_no_default_graph()
+    # test_dbpedia_download_archives()
+    # test_dbpedia_download_archives_list()

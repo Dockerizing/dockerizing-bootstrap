@@ -1,0 +1,11 @@
+datasets:
+    single_triple:
+        graph_name: "http://dld.aksw.org/testing#"
+        file: "single_triple.ttl"
+
+components:
+    store:
+        image: aksw/dld-store-virtuoso7
+        ports: ["8891:8890"]
+    load:
+        image: aksw/dld-load-virtuoso

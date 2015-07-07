@@ -170,7 +170,7 @@ class ComposeConfigGenerator(object):
         self.log = logging.getLogger('dld.' + self.__class__.__name__)
         self.compose_config = ComposeConfigDefaultDict()
         self._dataset_basenames = set()
-        self._config_done = defaultdict(lambda: False)
+        self._steps_done = defaultdict(lambda: False)
         self.log.debug("init - passed configuration:\n{}".format(self.configuration))
         ensure_dir_exists(self.working_directory, self.log)
         self.models_volume_dir = osp.join(self.working_directory, 'models')
@@ -218,6 +218,10 @@ class ComposeConfigGenerator(object):
                 raise RuntimeError("missing image declaration for component:\n{}".format(component_config))
         elif isinstance(component_config, str):
             return component_config
+
+    @staticmethod
+    def _valid_dataset_source_spec_keys():
+        return frozenset(['file', 'file_list', 'location', 'location_list'])
 
     def _update_container_config(self, component_config, compose_container_spec,
                                  settings_handler=None, additional_config_thunk=None):
@@ -276,9 +280,9 @@ class ComposeConfigGenerator(object):
             return msg_tmpl.format(wd=abs_wd)
 
     def configure_store(self):
-        if not self._config_done['store']:
+        if not self._steps_done['store']:
             self._configure_singleton_component('store')
-            self._config_done['store'] = True
+            self._steps_done['store'] = True
 
     def configure_load(self):
         def additional_config(compose_container_spec):
@@ -288,9 +292,9 @@ class ComposeConfigGenerator(object):
             compose_container_spec['volumes_from'].append('store')
             compose_container_spec['volumes'] = [osp.abspath(self.models_volume_dir) + ":/import"]
 
-        if not self._config_done['load']:
+        if not self._steps_done['load']:
             self._configure_singleton_component('load', additional_config_thunk=additional_config)
-            self._config_done['load'] = True
+            self._steps_done['load'] = True
 
     def _extract_last_word(str, fallback=None):
         try:
@@ -314,7 +318,7 @@ class ComposeConfigGenerator(object):
         def additional_config(compose_container_spec):
             compose_container_spec['links'].append('store')
 
-        if (not "present" in self.configuration["components"]) or self._config_done['present']:
+        if ('present' not in self.configuration["components"]) or self._steps_done['present']:
             return
         present_component_group = self.configuration["components"]['present']
         if is_dict_like(present_component_group):
@@ -341,7 +345,7 @@ class ComposeConfigGenerator(object):
                 self.compose_config[compose_name] = compose_container_spec
                 self._update_container_config(image_desc, compose_container_spec,
                                               additional_config_thunk=additional_config)
-        self._config_done['present'] = True
+        self._steps_done['present'] = True
 
     @classmethod
     def _http_client(cls, **kwargs):
@@ -350,6 +354,21 @@ class ComposeConfigGenerator(object):
         return httplib2.Http(cache=cache_dir, **kwargs)
 
     def prepare_import_data(self, datasets):
+        # self#configure_store must have been run before this method
+        if not self._steps_done['store']:
+            raise RuntimeError('[internal] cannot prepare import data before store configuration')
+
+        for prev_content in glob(osp.join(self.models_volume_dir, '*')):
+            if osp.isdir(prev_content):
+                os.removedirs(prev_content)
+            else:
+                os.remove(prev_content)
+
+        default_graph_name = self.compose_config['store'].get('environment', dict()).get('DEFAULT_GRAPH')
+        if default_graph_name:
+            with open(osp.join(self.models_volume_dir, "global.graph"), "w") as graph_file:
+                graph_file.write(default_graph_name + "\n")
+
         def check_for_duplicate_import(basename, src_locator):
             stripped_name = strip_ld_dump_type_suffixes(basename)
             if stripped_name in self._dataset_basenames:
@@ -358,50 +377,73 @@ class ComposeConfigGenerator(object):
             else:
                 self._dataset_basenames.add(stripped_name)
 
-        for prev_content in glob(osp.join(self.models_volume_dir, '*')):
-            if osp.isdir(prev_content):
-                os.removedirs(prev_content)
-            else:
-                os.remove(prev_content)
+        def file_basename(filepath):
+            _, basename = osp.split(filepath)
+            return basename
 
-        # ramification of the following line self#configure_store must be run before this method
-        default_graph_name = self.compose_config['store'].get('environment').get('DEFAULT_GRAPH')
-        if default_graph_name:
-            with open(osp.join(self.models_volume_dir, "global.graph"), "w") as graph_file:
-                graph_file.write(default_graph_name + "\n")
+        def location_basename(loc_url):
+            parsed_url = urlparse.urlparse(loc_url)
+            if parsed_url.scheme not in ['http', 'https']:
+                msg_tmpl = "location given for dataset {ds} does not appear to be a http(s)-URL:\n{loc}\n{ex}"
+                error = RuntimeError(msg_tmpl.format(ds=dataset_name, loc=loc_url))
+                self.log.error(msg_tmpl.format(ds=dataset_name, loc=loc_url, ex=error))
 
-        for dataset_name, dataset_config in datasets.items():
-            if 'file' in dataset_config:
-                filepath = dataset_config['file']
-                dirname, basename = osp.split(filepath)
-                check_for_duplicate_import(basename, filepath)
-                shutil.copyfile(filepath, osp.join(self.models_volume_dir, basename))
-            elif "location" in dataset_config:
-                loc_url = dataset_config['location']
-                parsed_url = urlparse.urlparse(loc_url)
-                if parsed_url.scheme not in ['http', 'https']:
-                    msg_tmpl = "location given for dataset {ds} does not appear to be a http(s)-URL:\n{loc}\n{ex}"
-                    error = RuntimeError(msg_tmpl.format(ds=dataset_name, loc=loc_url))
-                    self.log.error(msg_tmpl.format(ds=dataset_name, loc=loc_url, ex=error))
+            basename = parsed_url.path and parsed_url.path.split('/')[-1] or parsed_url.netloc
+            return basename
 
-                basename = parsed_url.path and parsed_url.path.split('/')[-1] or parsed_url.netloc
-                check_for_duplicate_import(basename, loc_url)
-                # this (hopefully) sets a sensible 1 minute default for connection inactivity
-                # TODO: create a context object that sets this timeout and restores previous timeout in __exit__
-                socket.setdefaulttimeout(60)
-                self.log.info("starting download: {u}".format(u=loc_url))
-                urlretrieve(loc_url, osp.join(self.models_volume_dir, basename))
-                self.log.info("download finished: {u}".format(u=loc_url))
-            else:
-                msg_tmpl = "No data source ('file' or 'location' key) defined for dataset:\n{ds}"
-                raise RuntimeError(msg_tmpl.format(ds=dataset_config))
+        def add_file(filepath, graph_name=None):
+            basename = file_basename(filepath)
+            check_for_duplicate_import(basename, filepath)
+            shutil.copyfile(filepath, osp.join(self.models_volume_dir, basename))
+            add_graph_file(basename, graph_name)
 
-            graph_name = dataset_config.get('graph_name')
-            if graph_name and graph_file is not default_graph_name:
+        def add_location(loc_url, graph_name=None):
+            basename = location_basename(loc_url)
+            check_for_duplicate_import(basename, loc_url)
+            # this (hopefully) sets a sensible 1 minute default for connection inactivity
+            # TODO: create a context object that sets this timeout and restores previous timeout in __exit__
+            socket.setdefaulttimeout(60)
+            self.log.info("starting download: {u}".format(u=loc_url))
+            urlretrieve(loc_url, osp.join(self.models_volume_dir, basename))
+            self.log.info("download finished: {u}".format(u=loc_url))
+            add_graph_file(basename, graph_name)
+
+        def add_graph_file(basename, graph_name):
+            if graph_name and (graph_name is not default_graph_name):
                 # Virtuoso expects graph for triples.nt.gz in triples.nt.graph, hence the following line
                 basename_no_archive = strip_compression_suffixes(basename)
                 with open(osp.join(self.models_volume_dir, basename_no_archive + ".graph"), "w") as graph_file:
                     graph_file.write(graph_name + "\n")
+
+        def handle_list(list_path, handler, graph_name):
+            """
+            :param handler: callable with (basename, graph_name) parameters
+            """
+            try:
+                with open(list_path) as src:
+                    for line in src:
+                        line.strip() and handler(line.strip(), graph_name)
+            except IOError as ex:
+                raise RuntimeError('Unable to open source specification list at {p} due to: {ex}' \
+                                   .format(p=list_path, ex=ex))
+
+        for dataset_name, dataset_config in datasets.items():
+            keys = frozenset(dataset_config.keys())
+            if len(keys.intersection(self._valid_dataset_source_spec_keys())) is not 1:
+                msg_tmpl = "None or several data source specifications ({opts} keys) defined for dataset:\n{ds}"
+                raise RuntimeError(msg_tmpl.format(ds=dataset_config,
+                                                   opts=" or ".join(self._valid_dataset_source_spec_keys())))
+
+            graph_name = dataset_config.get('graph_name')  # might be None
+
+            if 'file' in dataset_config:
+                add_file(dataset_config['file'], graph_name)
+            elif 'file_list' in dataset_config:
+                handle_list(dataset_config['file_list'], add_file, graph_name)
+            elif 'location' in dataset_config:
+                add_location(dataset_config['location'], graph_name)
+            elif 'location_list' in dataset_config:
+                handle_list(dataset_config['location_list'], add_location, graph_name)
 
 
 def usage():
@@ -477,6 +519,7 @@ def main(args=sys.argv[1:]):
     configurator = ComposeConfigGenerator(user_config, wd_from_cli)
     configurator.run()
     DLD_LOG.info(configurator.wd_ready_message)
+
 
 if __name__ == "__main__":
     logging_init()
