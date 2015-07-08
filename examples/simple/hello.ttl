@@ -1,0 +1,6 @@
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+<http://example.org/> a owl:Ontology ;
+                      rdfs:comment "Congratulations! You have successfully dockerized Linked Data." ;
+                      rdfs:seeAlso <https://dockerizing.github.io/> .

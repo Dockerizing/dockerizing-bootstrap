@@ -1,6 +1,16 @@
+settings:
+    default_graph: "http://example.org/"
+
+datasets:
+    site:
+        graph_name: "http://example.org/"
+        file: "hello.ttl"
+
 components:
     store:
         image: aksw/dld-store-virtuoso7
         ports: ["8895:8890"]
+        environment:
+            PWDDBA: "dba"
     load:
         image: aksw/dld-load-virtuoso
