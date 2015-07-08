@@ -1,7 +1,0 @@
-from: ontowiki-dld.yml
-
-setup:
-    present:
-        ontowiki:
-            image: aksw/dld-present-ontowiki
-            port: 8080

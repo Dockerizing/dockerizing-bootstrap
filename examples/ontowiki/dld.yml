@@ -1,0 +1,10 @@
+components:
+    store:
+        image: aksw/dld-store-virtuoso7
+        ports: ["8895:8890"]
+    load:
+        image: aksw/dld-load-virtuoso
+    present:
+        ontowiki:
+            image: aksw/dld-present-ontowiki
+            port: 8080
