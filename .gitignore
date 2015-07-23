@@ -11,3 +11,6 @@
 # temporary files
 logs/
 wd-*/
+
+# test data
+tests/*.bz2

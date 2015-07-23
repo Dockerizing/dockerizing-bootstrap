@@ -1,0 +1,3 @@
+[submodule "baselibs"]
+	path = baselibs
+	url = https://github.com/Dockerizing/baselibs.git
