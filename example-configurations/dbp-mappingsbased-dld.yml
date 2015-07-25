@@ -1,0 +1,15 @@
+datasets:
+    dbpedia-2015-mappingbased:
+        graph_name: "http://dbpedia.org"
+        file_list: "/opt/data/research/docker-ld/dockerizing-bootstrap/example-configurations/dbpedia-2015-mappingbased-files.list"
+
+components:
+    store:
+        image: aksw/dld-store-virtuoso7
+        ports: ["8891:8890"]
+        environment:
+          BUFFERS: 680000
+    load:
+        image: aksw/dld-load-virtuoso
+        environment:
+          CONNECTION_ATTEMPTS: 30

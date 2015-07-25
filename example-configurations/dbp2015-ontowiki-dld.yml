@@ -1,0 +1,23 @@
+datasets:
+    dbpedia-2015-endpoint:
+        graph_name: "http://dbpedia.org"
+        location_list: "dbpedia-2015-endpoint-download.list"
+
+components:
+    store:
+        image: aksw/dld-store-virtuoso7
+        ports: ["8891:8890"]
+        environment:
+            PWDDBA: herakiel
+            BUFFERS: 680000
+        mem_limit: 9G
+        cpu_shares: 64
+
+    load: aksw/dld-load-virtuoso
+    present:
+        ontowiki:
+            image: aksw/dld-present-ontowiki
+            ports: ["88:80"]
+
+settings:
+    default_graph: "http://dbpedia.org"
