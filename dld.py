@@ -27,7 +27,6 @@ import httplib2
 from docker import Client
 if __name__ != '__main__':
     from dldbase import DEV_MODE
-import IPython
 
 LAST_WORD_PATTERN = re.compile('[a-zA-Z0-9]+$')
 ARCHIVE_SUFFIX_PATTERN = re.compile('^(.*?)(\.(?:(?:bz2)|(?:gz)))$')
