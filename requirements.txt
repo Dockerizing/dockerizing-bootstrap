@@ -1,3 +1,5 @@
 docker-py >= 1.0
+future
+futures
 pyyaml
 httplib2
