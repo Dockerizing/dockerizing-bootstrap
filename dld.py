@@ -38,12 +38,16 @@ LAST_WORD_PATTERN = re.compile('[a-zA-Z0-9]+$')
 PROJECT_DIR = osp.dirname(osp.realpath(__file__))
 DLD_LOG = logging.getLogger('dld')
 
+py2list = list
+#py2list = list._builtin_list
 
 # TODO: check if we can use copy.deepcopy instead
 def ddict2dict(d):
     for k, v in d.items():
         if is_dict_like(v):
             d[k] = ddict2dict(v)
+        elif is_list_like(v):
+            d[k] = py2list(v)
     return dict(d)
 
 
@@ -54,9 +58,19 @@ def ensure_dir_exists(dir, log):
         DEV_MODE and log.warning("The given path '{d}' already exists.".format(d=dir))
 
 
-def is_dict_like(obj):
-    return hasattr(obj, 'keys') and callable(obj.keys)
+DICT_LIKE_ATTRIBUTES = ('keys', 'iterkeys', 'get', 'update')
+LIST_LIKE_ATTRIBUTES = ('insert', 'reverse', 'sort', 'pop')
 
+def _signature_testing(obj, expected_attributes):
+    attr_checks = map(lambda attr: hasattr(obj, attr), expected_attributes)
+    return all(attr_checks)
+
+
+def is_dict_like(obj):
+    return _signature_testing(obj, DICT_LIKE_ATTRIBUTES)
+
+def is_list_like(obj):
+    return _signature_testing(obj, LIST_LIKE_ATTRIBUTES)
 
 class ComposeConfigGenerator(object):
     def __init__(self, configuration, working_directory):
@@ -281,6 +295,7 @@ class ComposeConfigGenerator(object):
                 stripped_ds_basename = FilenameOps.strip_ld_and_compession_extensions(basename)
 
                 if not datasets.DatasetMemory.was_added_or_retained(stripped_ds_basename):
+                    DLD_LOG.debug("removing extranous import data file: {f}".format(f=dircontent))
                     os.remove(dircontent)
                     # delete corresponding graph file, if it exists
                     graph_file = osp.join(DLDConfig.models_dir, FilenameOps.graph_file_name(basename))
@@ -342,7 +357,7 @@ def main(args=sys.argv[1:]):
             if "default" not in user_config["datasets"]:
                 user_config["datasets"]["cli"] = {}
             user_config["settings"]["default_graph"] = uri_from_cli
-            user_config["datasets"]["cli"]["uri"] = uri_from_cli
+            user_config["datasets"]["cli"]["graph_name"] = uri_from_cli
             if file_from_cli:
                 user_config["datasets"]["cli"]["file"] = file_from_cli
             elif location_from_cli:
