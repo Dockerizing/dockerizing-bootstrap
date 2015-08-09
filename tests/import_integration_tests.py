@@ -5,6 +5,7 @@ import os
 from os import path as osp
 from glob import glob
 import re
+import sys
 import time
 import threading
 import logging
@@ -66,7 +67,7 @@ def test_simple_config_no_default_graph():
             * relative path for default config and file to import
             * do no generate separate working subdirectory
     """
-    test_name = 'test_simple_config_default_config_name_wd_is_cwd'
+    test_name = 'test_simple_config_no_default_graph'
     import_file_src = osp.join(TEST_DIR, 'single_triple.ttl')
     config_file_src = osp.join(TEST_DIR, 'simple-graph-defined-dld.yml')
     dld_args = ['-w', '.', '-c', config_file_src]
@@ -284,7 +285,13 @@ def _import_integration_test(*args, **kwargs):
 
 
 if __name__ == '__main__':
-    dld.logging_init()
+    PROJECT_DIR = osp.dirname(osp.dirname(osp.realpath(__file__)))
+    sys.path.append(osp.join(PROJECT_DIR, 'baselibs', 'python'))
+
+    from dldbase.logging import logging_init
+
+    logging_init(osp.join(PROJECT_DIR, 'logs'))
+
     import sure
 
     test_simple_config_with_dataset_from_cli_args()
