@@ -25,52 +25,21 @@ import tempfile
 import yaml
 import httplib2
 from docker import Client
+
 if __name__ != '__main__':
     from dldbase import DEV_MODE
 
+from data import datasets
+from config import DLDConfig
+from tools import FilenameOps, ComposeConfigDefaultDict, HeadRequest, alpha_gen
+
 LAST_WORD_PATTERN = re.compile('[a-zA-Z0-9]+$')
-ARCHIVE_SUFFIX_PATTERN = re.compile('^(.*?)(\.(?:(?:bz2)|(?:gz)))$')
-RDF_SERIALISAION_PATTERN = re.compile(
-    '^(.*?)(\.(?:(?:nt)|(?:ttl)|(?:nq)|(?:rdf)|(?:owl)|(?:jsonld)|(?:json)|(?:xml)))$')
-YAML_FILETYPE_PATTERN = re.compile('^(.*?)(\.(?:(?:yml)|(?:yaml)))$')
 
 PROJECT_DIR = osp.dirname(osp.realpath(__file__))
 DLD_LOG = logging.getLogger('dld')
 
-class HeadRequest(urllib2.Request):
-    def get_method(self):
-        return "HEAD"
 
-
-class ComposeConfigDefaultDict(dict):
-    _list_keys = frozenset(['links', 'volumes', 'volumes_from', 'ports'])
-
-    _dict_keys = frozenset(['environment'])
-
-    _recurse_keys = frozenset(['store', 'load'])
-
-    _recurse_prefixes = frozenset(['present'])
-
-    @classmethod
-    def _should_recurse(cls, key):
-        if key in cls._recurse_keys:
-            return True
-        match_prefix = lambda prefix: key.startswith(prefix)
-        return any(map(match_prefix, cls._recurse_prefixes))
-
-    def __missing__(self, key):
-        if key in self.__class__._list_keys:
-            default_val = list()
-        elif key in self.__class__._dict_keys:
-            default_val = dict()
-        elif self.__class__._should_recurse(key):
-            default_val = ComposeConfigDefaultDict()
-        else:
-            raise RuntimeError("undefined default for key: " + key)
-        self[key] = default_val
-        return default_val
-
-
+# TODO: check if we can use copy.deepcopy instead
 def ddict2dict(d):
     for k, v in d.items():
         if is_dict_like(v):
@@ -89,38 +58,6 @@ def is_dict_like(obj):
     return hasattr(obj, 'keys') and callable(obj.keys)
 
 
-def alpha_gen():
-    mem = 'A'
-    yield mem
-    while mem is not 'Z':
-        mem = chr(ord(mem) + 1)
-        yield mem
-
-
-def _strip_when_match(pattern, str):
-    match_attempt = pattern.match(str)
-    return match_attempt and match_attempt.group(1) or str
-
-
-def strip_ld_dump_type_suffixes(filename):
-    res = filename
-    res = _strip_when_match(ARCHIVE_SUFFIX_PATTERN, res)
-    res = _strip_when_match(RDF_SERIALISAION_PATTERN, res)
-    return res
-
-
-def strip_compression_suffixes(filename):
-    return _strip_when_match(ARCHIVE_SUFFIX_PATTERN, filename)
-
-
-def _strip_config_suffixes(filename):
-    res = filename
-    res = _strip_when_match(YAML_FILETYPE_PATTERN, res)
-    if res.endswith('-dld'):
-        res = res[:-4]
-    return res
-
-
 class ComposeConfigGenerator(object):
     def __init__(self, configuration, working_directory):
         self.configuration = configuration
@@ -130,8 +67,8 @@ class ComposeConfigGenerator(object):
         self._steps_done = defaultdict(lambda: False)
         self.log.debug("init - passed configuration:\n{}".format(self.configuration))
         ensure_dir_exists(self.working_directory, self.log)
-        self.models_volume_dir = osp.join(self.working_directory, 'models')
-        ensure_dir_exists(self.models_volume_dir, self.log)
+        DLDConfig.models_dir = osp.join(self.working_directory, 'models')
+        ensure_dir_exists(DLDConfig.models_dir, self.log)
 
     def run(self):
         # self.pull_images(self.configuration) #not using image metadata yet
@@ -247,7 +184,7 @@ class ComposeConfigGenerator(object):
             # TODO This might also be done by reading the labels of the load container resp. for the other categories.
             # A stub for loding the images and reading the labels is in pull_images
             compose_container_spec['volumes_from'].append('store')
-            compose_container_spec['volumes'] = [osp.abspath(self.models_volume_dir) + ":/import"]
+            compose_container_spec['volumes'] = [osp.abspath(DLDConfig.models_dir) + ":/import"]
 
         if not self._steps_done['load']:
             self._configure_singleton_component('load', additional_config_thunk=additional_config)
@@ -310,134 +247,43 @@ class ComposeConfigGenerator(object):
         cache_dir = osp.join(tempfile.gettempdir(), '.dld-http-caching')
         return httplib2.Http(cache=cache_dir, **kwargs)
 
-    def prepare_import_data(self, datasets):
+    def prepare_import_data(self, datasets_fragment):
         # self#configure_store must have been run before this method
         if not self._steps_done['store']:
             raise RuntimeError('[internal] cannot prepare import data before store configuration')
 
-        added_or_retained_files = set()
-        dataset_basenames = set()
         default_graph_name = self.compose_config['store'].get('environment', dict()).get('DEFAULT_GRAPH')
         if default_graph_name:
-            with open(osp.join(self.models_volume_dir, "global.graph"), "w") as graph_file:
+            with open(osp.join(DLDConfig.models_dir, "global.graph"), "w") as graph_file:
                 graph_file.write(default_graph_name + "\n")
 
-        def check_for_duplicate_import(basename, src_locator):
-            stripped_name = strip_ld_dump_type_suffixes(basename)
-            if stripped_name in dataset_basenames:
-                msg_tmpl = "duplicate source '{src}' (stripped: '{str}')"
-                raise RuntimeError(msg_tmpl.format(src=src_locator, str=strip_ld_dump_type_suffixes(basename)))
-            else:
-                dataset_basenames.add(stripped_name)
-
-        def file_basename(filepath):
-            _, basename = osp.split(filepath)
-            return basename
-
-        def location_basename(loc_url):
-            parsed_url = urlparse.urlparse(loc_url)
-            if parsed_url.scheme not in ['http', 'https']:
-                msg_tmpl = "location given for dataset {ds} does not appear to be a http(s)-URL:\n{loc}\n{ex}"
-                error = RuntimeError(msg_tmpl.format(ds=dataset_name, loc=loc_url))
-                self.log.error(msg_tmpl.format(ds=dataset_name, loc=loc_url, ex=error))
-
-            basename = parsed_url.path and parsed_url.path.split('/')[-1] or parsed_url.netloc
-            return basename
-
-        def add_file(filepath, graph_name=None):
-            basename = file_basename(filepath)
-            target_file = osp.join(self.models_volume_dir, basename)
-            check_for_duplicate_import(basename, filepath)
-            shutil.copyfile(filepath, target_file)
-            ensure_correct_graph_file(basename, graph_name)
-            added_or_retained_files.add(target_file)
-
-        def add_location(loc_url, graph_name=None):
-            def get_content_size(loc_url):
-                try:
-                    response = urllib2.urlopen(HeadRequest(loc_url), timeout=60)
-                    length_str = response.headers.getheader('content-length')
-                    return (length_str is not None) and long(length_str) or None
-                except:
-                    self.log.exception("error getting HEAD for {u}".format(u=loc_url))
-                    return None
-
-            basename = location_basename(loc_url)
-            check_for_duplicate_import(basename, loc_url)
-            target_file = osp.join(self.models_volume_dir, basename)
-
-            skip_download = False
-            if osp.isfile(target_file):
-                if get_content_size(loc_url) == osp.getsize(target_file):
-                    self.log.info("{tf} seems to be complete download of {u} -- skipping (re-)download"
-                                  .format(tf=target_file, u=loc_url))
-                    skip_download = True
-
-            if not skip_download:
-                # this (hopefully) sets a sensible 1 minute default for connection inactivity
-                # TODO: create a context object that sets this timeout and restores previous timeout in __exit__
-                socket.setdefaulttimeout(60)
-                self.log.info("starting download: {u}".format(u=loc_url))
-                urlretrieve(loc_url, target_file)
-                self.log.info("download finished: {u}".format(u=loc_url))
-
-            ensure_correct_graph_file(basename, graph_name)
-            added_or_retained_files.add(target_file)
-
-        def graph_file_path(basename):
-            return osp.join(self.models_volume_dir, strip_compression_suffixes(basename) + ".graph")
-
-        def ensure_correct_graph_file(basename, graph_name):
-            # Virtuoso expects graph for triples.nt.gz in triples.nt.graph, hence the following line
-            graph_file_loc = graph_file_path(basename)
-
-            if graph_name and (graph_name != default_graph_name):
-                with open(graph_file_loc, "w") as graph_fd:
-                    graph_fd.write(graph_name + "\n")
-            if ((not graph_name) or (graph_name == default_graph_name)) and osp.isfile(graph_file_loc):
-                os.remove(graph_file_loc)
-
-        def handle_list(list_path, handler, graph_name):
-            """
-            :param handler: callable with (basename, graph_name) parameters
-            """
-            try:
-                with open(list_path) as src:
-                    for line in src:
-                        line.strip() and handler(line.strip(), graph_name)
-            except IOError as ex:
-                raise RuntimeError('Unable to open source specification list at {p} due to: {ex}' \
-                                   .format(p=list_path, ex=ex))
-
-        for dataset_name, dataset_config in datasets.items():
+        for dataset_name, dataset_config in datasets_fragment.items():
             keys = frozenset(dataset_config.keys())
-            if len(keys.intersection(self._valid_dataset_source_spec_keys())) is not 1:
+            source_spec_keywords = keys.intersection(datasets.DATASET_SPEC_TYPE_BY_KEYWORD.keys())
+            if len(source_spec_keywords) is not 1:
                 msg_tmpl = "None or several data source specifications ({opts} keys) defined for dataset:\n{ds}"
                 raise RuntimeError(msg_tmpl.format(ds=dataset_config,
                                                    opts=" or ".join(self._valid_dataset_source_spec_keys())))
 
-            gn = dataset_config.get('graph_name')  # might be None
-
-            if 'file' in dataset_config:
-                add_file(dataset_config['file'], graph_name=gn)
-            elif 'file_list' in dataset_config:
-                handle_list(dataset_config['file_list'], add_file, graph_name=gn)
-            elif 'location' in dataset_config:
-                add_location(dataset_config['location'], graph_name=gn)
-            elif 'location_list' in dataset_config:
-                handle_list(dataset_config['location_list'], add_location, graph_name=gn)
+            spec_keyword = next(iter(source_spec_keywords))
+            graph_name = dataset_config.get('graph_name')  # might be None
+            factory = datasets.DATASET_SPEC_TYPE_BY_KEYWORD[spec_keyword]
+            dataset_spec = factory(dataset_config[spec_keyword], graph_name)
+            dataset_spec.add_to_import_data()
 
         # finally, remove dump files in the models dir that were there before but were not
         # requested by the config
-        for dircontent in glob(osp.join(self.models_volume_dir, '*')):
+        for dircontent in glob(osp.join(DLDConfig.models_dir, '*')):
             if osp.isdir(dircontent):  # dld.py does not create subdirectories of the models directory
                 os.removedirs(dircontent)
             elif osp.isfile(dircontent) and not dircontent.endswith('.graph'):
-                file = dircontent
-                if file not in added_or_retained_files:
-                    os.remove(file)
+                basename = FilenameOps.basename(dircontent)
+                stripped_ds_basename = FilenameOps.strip_ld_and_compession_extensions(basename)
+
+                if not datasets.DatasetMemory.was_added_or_retained(stripped_ds_basename):
+                    os.remove(dircontent)
                     # delete corresponding graph file, if it exists
-                    graph_file = graph_file_path(osp.basename(file))
+                    graph_file = osp.join(DLDConfig.models_dir, FilenameOps.graph_file_name(basename))
                     if osp.isfile(graph_file):
                         os.remove(graph_file)
 
@@ -481,7 +327,7 @@ def main(args=sys.argv[1:]):
     # read configuration file
 
     if not wd_from_cli:
-        wd_from_cli = 'wd-' + _strip_config_suffixes(osp.basename(config_file))
+        wd_from_cli = 'wd-' + FilenameOps.strip_config_suffixes(osp.basename(config_file))
 
     with open(config_file, 'r') as config_fd:
         user_config = yaml.load(config_fd)
@@ -519,7 +365,11 @@ def main(args=sys.argv[1:]):
 
 if __name__ == "__main__":
     import sys
+
     sys.path.append(osp.join(PROJECT_DIR, 'baselibs', 'python'))
+    if os.getcwd() != PROJECT_DIR:
+        sys.path.append(PROJECT_DIR)
+
     from dldbase.logging import logging_init
     from dldbase import DEV_MODE
 
