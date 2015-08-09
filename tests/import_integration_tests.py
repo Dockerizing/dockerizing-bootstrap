@@ -14,10 +14,12 @@ from subprocess import Popen, PIPE
 from invoke import run
 from SPARQLWrapper import SPARQLWrapper, JSON
 
-import dld
+if __name__ != '__main__':
+    import dld
 
 TEST_DIR = osp.dirname(osp.realpath(__file__))
 TEST_LOG = logging.getLogger('dld.test')
+TEST_TEMP_DIR = os.environ.get('DLD_TEST_TMP')
 VOS_IMPORT_COMPLETED_PATTERN = re.compile(r'done loading graphs \(start hanging around idle\)')
 
 
@@ -35,7 +37,8 @@ def test_simple_config_with_dataset_from_cli_args():
     osp.isfile(import_file).should.be(True)
     dld_args = ['-f', import_file, '-u', graph_name, '-c', config_file]
     expected_counts = {'http://dld.aksw.org/testing#': 1}
-    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts) as test:
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts,
+                               keep_tmpdir=True) as test:
         test.run()
 
 
@@ -53,7 +56,7 @@ def test_simple_config_default_config_name_wd_is_cwd():
     config_file_src = osp.join(TEST_DIR, 'simple-dld.yml')
     dld_args = ['-f', 'single_triple.ttl', '-u', graph_name, '-w', '.']
     expected_counts = {'http://dld.aksw.org/testing#': 1}
-    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts) as test:
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
         shutil.copy(import_file_src, test.tmpdir)
         shutil.copy(config_file_src, osp.join(test.tmpdir, 'dld.yml'))
         test.run()
@@ -72,7 +75,7 @@ def test_simple_config_no_default_graph():
     config_file_src = osp.join(TEST_DIR, 'simple-graph-defined-dld.yml')
     dld_args = ['-w', '.', '-c', config_file_src]
     expected_counts = {'http://dld.aksw.org/testing#': 1}
-    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts) as test:
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
         shutil.copy(import_file_src, test.tmpdir)
         test.run()
 
@@ -89,7 +92,7 @@ def test_dbpedia_local_archives():
     dld_args = ['-c', config_file]
     expected_counts = {'http://dbpedia.org': (791040, 791048)
                        }
-    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts,
                                   import_timeout=300) as test:
         for archive in ['homepages_en.ttl.bz2', 'old_interlanguage_links_en.nt.bz2']:
             shutil.copy(osp.join(TEST_DIR, archive), test.tmpdir)
@@ -108,7 +111,7 @@ def test_dbpedia_local_archives_list():
     dld_args = ['-c', config_file]
     expected_counts = {'http://dbpedia.org': (791040, 791048)
                        }
-    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts,
                                   import_timeout=300) as test:
         with open(osp.join(test.tmpdir, 'dbpedia_sample_datasets_local.list'), 'w') as file_list:
             for archive in ["homepages_en.ttl.bz2", 'old_interlanguage_links_en.nt.bz2', ]:
@@ -130,7 +133,7 @@ def test_dbpedia_download_archives():
     dld_args = ['-c', config_file]
     expected_counts = {'http://dbpedia.org': (791040, 791048)
                        }
-    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts,
                                   import_timeout=300) as test:
         test.run()
 
@@ -148,7 +151,7 @@ def test_dbpedia_download_archives_list():
     dld_args = ['-c', config_file]
     expected_counts = {'http://dbpedia.org': (791040, 791048)
                        }
-    with _import_integration_test(test_name, dld_args, expected_triple_counts=expected_counts,
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts,
                                   import_timeout=300) as test:
         shutil.copy(list_file, osp.join(test.tmpdir, 'dbpedia_sample_datasets_download.list'))
         test.run()
@@ -172,7 +175,7 @@ class ImportIntegrationTest(object):
         self.tmpdir = None
 
     def __enter__(self):
-        self.tmpdir = tempfile.mkdtemp('wd', self.test_name)
+        self.tmpdir = tempfile.mkdtemp('wd', self.test_name, dir=TEST_TEMP_DIR)
         self.dld_args += ['-w', self.tmpdir]
         return self
 
@@ -279,19 +282,16 @@ class ImportIntegrationTest(object):
         self.wait_for_completed_import()
         self.verify_imported_triple_counts()
 
-
-def _import_integration_test(*args, **kwargs):
-    return ImportIntegrationTest(*args, **kwargs)
-
-
 if __name__ == '__main__':
     PROJECT_DIR = osp.dirname(osp.dirname(osp.realpath(__file__)))
+    sys.path.append(PROJECT_DIR)
     sys.path.append(osp.join(PROJECT_DIR, 'baselibs', 'python'))
 
     from dldbase.logging import logging_init
 
     logging_init(osp.join(PROJECT_DIR, 'logs'))
 
+    import dld
     import sure
 
     test_simple_config_with_dataset_from_cli_args()
