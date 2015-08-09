@@ -162,8 +162,10 @@ class FileDatasetSpec(AbstractDatasetSpec):
         if osp.isfile(self.target_path) and osp.getsize(self.source_path) == osp.getsize(self.target_path):
             self.log.info("{tp} appears to be identical to {sp} - skipping copy"
                           .format(sp=self.source_path, tp=self.target_path))
+            DatasetMemory.retained_file(self.stripped_basename)
         else:
             shutil.copyfile(self.source_path, self.target_path)
+            DatasetMemory.added_file(self.stripped_basename)
 
     def _extract_basename(self):
         return FilenameOps.basename(self.source)
@@ -194,7 +196,10 @@ class HTTPLocationDatesetSpec(AbstractDatasetSpec):
                               .format(tp=self.target_path, u=self.source_location))
                 skip_download = True
 
-        if not skip_download:
+        if skip_download:
+            DatasetMemory.retained_file(self.stripped_basename)
+        else:
+            DatasetMemory.added_file(self.stripped_basename)
             # this (hopefully) sets a sensible 1 minute default for connection inactivity
             with adjusted_socket_timeout(60):
                 self.log.info("starting download: {u}".format(u=self.source_location))
