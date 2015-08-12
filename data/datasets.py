@@ -227,7 +227,7 @@ class SourceListMixin(object):
         try:
             with open(self.source) as src:
                 for line in src:
-                    line.strip() and self.atomic_spec_factory(line).add_to_import_data()
+                    line.strip() and self.atomic_spec_factory(line.strip()).add_to_import_data()
         except IOError as ex:
             raise RuntimeError('Unable to open source specification list at {p} due to: {ex}' \
                                .format(p=self.source, ex=ex))
