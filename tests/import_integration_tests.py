@@ -25,7 +25,7 @@ VOS_IMPORT_COMPLETED_PATTERN = re.compile(r'done loading graphs \(start hanging 
 
 def test_simple_config_with_dataset_from_cli_args():
     """
-        test scenario for:
+        test scenario for 'simple config with data from cli args':
             * only a single local file specified to import as CLI option
             * absolute path for config and file to import
     """
@@ -42,7 +42,7 @@ def test_simple_config_with_dataset_from_cli_args():
 
 def test_simple_config_default_config_name_wd_is_cwd():
     """
-        test scenario for:
+        test scenario for 'simple config, default name, wd is cwd':
             * only a single local file specified to import as CLI option
             * relative path for default config and file to import
             * configuration name not specified -> default to 'dld.yml'
@@ -62,7 +62,7 @@ def test_simple_config_default_config_name_wd_is_cwd():
 
 def test_simple_config_fail_when_default_graph_required_but_missing():
     """
-        test scenario for:
+        test scenario for 'simple config fail when default graph is required, but missing':
             * only a single local file specified to import as CLI option
             * should fail, as the setup relies on the default graph name, which is no specified
     """
@@ -76,11 +76,10 @@ def test_simple_config_fail_when_default_graph_required_but_missing():
                                keep_tmpdir=True) as test:
         shutil.copy(import_file, test.tmpdir)
         test.run.when.called.should.throw(RuntimeError)
-        test.run()
 
 def test_simple_config_no_default_graph():
     """
-        test scenario for:
+        test scenario for 'simple config, no default graph':
             * only a single local file specified in config
             * do default graph specified
             * relative path for default config and file to import
@@ -98,7 +97,7 @@ def test_simple_config_no_default_graph():
 
 def test_dbpedia_local_archives():
     """
-        test scenario for:
+        test scenario for 'dbpedia local archives':
             * local archives to import defined in config
             * conversion bz2 -> gz required (at least for VOS)
             * different rdf serialisation formats among files to import (nt and ttl)
@@ -117,7 +116,7 @@ def test_dbpedia_local_archives():
 
 def test_dbpedia_local_archives_list():
     """
-        test scenario for:
+        test scenario for 'dbpedia, local archives list':
             * local archives to import defined in listing file
             * conversion bz2 -> gz required (at least for VOS)
             * different rdf serialisation formats among files to import (nt and ttl)
@@ -139,7 +138,7 @@ def test_dbpedia_local_archives_list():
 
 def test_dbpedia_download_archives():
     """
-        test scenario for:
+        test scenario for 'dbpedia, download archives':
             * download archives from official download server
             * conversion bz2 -> gz required (at least for VOS)
             * different rdf serialisation formats among files to import (nt and ttl)
@@ -156,7 +155,7 @@ def test_dbpedia_download_archives():
 
 def test_dbpedia_download_archives_list():
     """
-        test scenario for:
+        test scenario for 'dbpeida, down archives list':
             * download archives from official download server
             * conversion bz2 -> gz required (at least for VOS)
             * different rdf serialisation formats among files to import (nt and ttl)
@@ -201,7 +200,6 @@ class ImportIntegrationTest(object):
             self.log.debug('cleaning up containers')
             run("docker-compose -p {pn} kill".format(pn=self.compose_name), hide=False, warn=True)
             run("docker-compose -p {pn} rm -f".format(pn=self.compose_name), hide=False, warn=True)
-            run("sudo /home/neradis/bin/docker-cleanup-volumes.sh".format(pn=self.compose_name), hide=False, warn=True)
         if self.keep_tmpdir is not True:
             if self.tmpdir:
                 shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -311,9 +309,9 @@ if __name__ == '__main__':
     import dld
     import sure
 
-    test_simple_config_with_dataset_from_cli_args()
-    test_simple_config_no_default_graph()
+    # test_simple_config_with_dataset_from_cli_args()
+    # test_simple_config_no_default_graph()
     test_simple_config_fail_when_default_graph_required_but_missing()
-    test_dbpedia_local_archives()
-    test_dbpedia_download_archives()
-    test_dbpedia_download_archives_list()
+    # test_dbpedia_local_archives()
+    # test_dbpedia_download_archives()
+    # test_dbpedia_download_archives_list()
