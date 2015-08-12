@@ -53,6 +53,13 @@ class DatasetMemory(object):
             return any((stripped_basename in s) for s in (cls._added, cls._retained))
 
     @classmethod
+    def reset(cls):
+        with cls.lock:
+            cls._added = set()
+            cls._retained = set()
+            cls._adding = set()
+
+    @classmethod
     def adding_token(cls, stripped_basename):
         class AddingDatasetToken(object):
             def __enter__(self):
