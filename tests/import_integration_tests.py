@@ -309,9 +309,10 @@ if __name__ == '__main__':
     import dld
     import sure
 
-    # test_simple_config_with_dataset_from_cli_args()
-    # test_simple_config_no_default_graph()
+    test_simple_config_with_dataset_from_cli_args()
+    test_simple_config_no_default_graph()
     test_simple_config_fail_when_default_graph_required_but_missing()
-    # test_dbpedia_local_archives()
+    test_dbpedia_local_archives()
+    test_dbpedia_local_archives_list()
     # test_dbpedia_download_archives()
     # test_dbpedia_download_archives_list()

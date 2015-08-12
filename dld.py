@@ -318,6 +318,9 @@ def main(args=sys.argv[1:]):
     location_from_cli = None
     file_from_cli = None
 
+    DLDConfig.reset()
+    datasets.DatasetMemory.reset()  # TODO make this obsolete by embedding a DatasetMemory instance per config process
+
     for opt, opt_val in opts:
         if opt in ("-h", "--help"):
             usage()
@@ -375,7 +378,6 @@ def main(args=sys.argv[1:]):
         sys.exit(2)
 
     # start dld process
-    datasets.DatasetMemory.reset()  # TODO make this obsolete by embedding a DatasetMemory instance per config process
     configurator = ComposeConfigGenerator(user_config, wd_from_cli)
     configurator.run()
     DLD_LOG.info(configurator.wd_ready_message)

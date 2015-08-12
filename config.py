@@ -8,3 +8,8 @@ from builtins import *
 class DLDConfig(object):
     default_graph_name = None
     models_dir = None
+
+    @classmethod
+    def reset(cls):
+        cls.default_graph_name = None
+        cls.models_dir = None
