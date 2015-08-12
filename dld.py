@@ -6,13 +6,9 @@ import os
 from os import path as osp
 from glob import glob
 import getopt
-import shutil
 import re
 import logging
 import logging.config
-import socket
-from urllib import urlretrieve
-import urllib2
 from collections import defaultdict
 from textwrap import dedent
 
@@ -266,10 +262,9 @@ class ComposeConfigGenerator(object):
         if not self._steps_done['store']:
             raise RuntimeError('[internal] cannot prepare import data before store configuration')
 
-        default_graph_name = self.compose_config['store'].get('environment', dict()).get('DEFAULT_GRAPH')
-        if default_graph_name:
+        if DLDConfig.default_graph_name:
             with open(osp.join(DLDConfig.models_dir, "global.graph"), "w") as graph_file:
-                graph_file.write(default_graph_name + "\n")
+                graph_file.write(DLDConfig.default_graph_name + "\n")
 
         for dataset_name, dataset_config in datasets_fragment.items():
             keys = frozenset(dataset_config.keys())
@@ -354,9 +349,11 @@ def main(args=sys.argv[1:]):
                 user_config["datasets"] = {}
             if "settings" not in user_config:
                 user_config["settings"] = {}
-            if "default" not in user_config["datasets"]:
+            if "cli" not in user_config["datasets"]:
                 user_config["datasets"]["cli"] = {}
-            user_config["settings"]["default_graph"] = uri_from_cli
+            else:
+                raise RuntimeError("Reserved dataset key 'cli' used in configuration file")
+
             user_config["datasets"]["cli"]["graph_name"] = uri_from_cli
             if file_from_cli:
                 user_config["datasets"]["cli"]["file"] = file_from_cli
@@ -367,12 +364,18 @@ def main(args=sys.argv[1:]):
             usage()
             sys.exit(2)
 
+    if is_dict_like(user_config.get("settings")):
+        DLDConfig.default_graph_name = user_config["settings"].get("default_graph")
+    if uri_from_cli:
+        DLDConfig.default_graph_name = uri_from_cli
+
     if "datasets" not in user_config or "components" not in user_config:
-        DLD_LOG.error("dataset and setup configuration is needed")
+        DLD_LOG.error("dataset and component configuration is needed")
         usage()
         sys.exit(2)
 
     # start dld process
+    datasets.DatasetMemory.reset()  # TODO make this obsolete by embedding a DatasetMemory instance per config process
     configurator = ComposeConfigGenerator(user_config, wd_from_cli)
     configurator.run()
     DLD_LOG.info(configurator.wd_ready_message)

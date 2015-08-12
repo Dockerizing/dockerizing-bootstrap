@@ -63,7 +63,8 @@ class DatasetMemory(object):
                         cls._adding.add(stripped_basename)
 
             def __exit__(self, *args):
-                cls._adding.remove(stripped_basename)
+                with cls.lock:
+                    cls._adding.remove(stripped_basename)
 
         return AddingDatasetToken()
 
@@ -74,8 +75,6 @@ class DatasetAlreadyBeingAddedError(RuntimeError):
 
 
 class AbstractDatasetSpec(object):
-    default_graph_name = None
-
     def __init__(self, source, graph_name=None):
         self.source = source
         self.graph_name = graph_name
@@ -124,7 +123,7 @@ class AbstractDatasetSpec(object):
             raise RuntimeError("No destination graph name defined for {bn}".format(bn=self.basename))
 
         # write a graph file if destination graph name differs from default destination graph name
-        if self.graph_file_path and (self.graph_name != DLDConfig.default_graph_name):
+        if self.graph_name and (self.graph_name != DLDConfig.default_graph_name):
             with open(self.graph_file_path, "w") as graph_fd:
                 graph_fd.write(self.graph_name + "\n")
 
@@ -143,11 +142,6 @@ class AbstractDatasetSpec(object):
         if not self.skip:
             self.log.info("skipping dataset from: {src}".format(src=self.source))
         self.skip = True
-
-    @staticmethod
-    def _ensure_default_graph_name():
-        if not isinstance(AbstractDatasetSpec.default_graph_name, (str, unicode)):
-            raise RuntimeError("default graph name not set")
 
 
 class FileDatasetSpec(AbstractDatasetSpec):
