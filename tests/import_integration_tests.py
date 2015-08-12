@@ -29,7 +29,6 @@ def test_simple_config_with_dataset_from_cli_args():
             * only a single local file specified to import as CLI option
             * absolute path for config and file to import
     """
-
     test_name = 'test_simple_config_with_dataset_from_cli_args'
     graph_name = 'http://dld.aksw.org/testing#'
     import_file = osp.join(TEST_DIR, 'single_triple.ttl')
@@ -37,8 +36,7 @@ def test_simple_config_with_dataset_from_cli_args():
     osp.isfile(import_file).should.be(True)
     dld_args = ['-f', import_file, '-u', graph_name, '-c', config_file]
     expected_counts = {'http://dld.aksw.org/testing#': 1}
-    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts,
-                               keep_tmpdir=True) as test:
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
         test.run()
 
 
@@ -61,6 +59,24 @@ def test_simple_config_default_config_name_wd_is_cwd():
         shutil.copy(config_file_src, osp.join(test.tmpdir, 'dld.yml'))
         test.run()
 
+
+def test_simple_config_fail_when_default_graph_required_but_missing():
+    """
+        test scenario for:
+            * only a single local file specified to import as CLI option
+            * should fail, as the setup relies on the default graph name, which is no specified
+    """
+    test_name = 'test_simple_config_fail_when_default_graph_required_but_missing'
+    import_file = osp.join(TEST_DIR, 'single_triple.ttl')
+    config_file = osp.join(TEST_DIR, 'simple-missing-default-graph-dld.yml')
+    osp.isfile(import_file).should.be(True)
+    dld_args = ['-c', config_file]
+    expected_counts = {'http://dld.aksw.org/testing#': 1}
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts,
+                               keep_tmpdir=True) as test:
+        shutil.copy(import_file, test.tmpdir)
+        test.run.when.called.should.throw(RuntimeError)
+        test.run()
 
 def test_simple_config_no_default_graph():
     """
@@ -158,7 +174,7 @@ def test_dbpedia_download_archives_list():
 
 
 class ImportIntegrationTest(object):
-    def __init__(self, test_name='import_test', dld_args=[], import_timeout=10,
+    def __init__(self, test_name='import_test', dld_args=[], import_timeout=30,
                  store_port=8891, expected_triple_counts=dict(), keep_tmpdir=False,
                  keep_containers=False):
         self.log = logging.getLogger('dld.test.' + self.__class__.__name__)
@@ -185,6 +201,7 @@ class ImportIntegrationTest(object):
             self.log.debug('cleaning up containers')
             run("docker-compose -p {pn} kill".format(pn=self.compose_name), hide=False, warn=True)
             run("docker-compose -p {pn} rm -f".format(pn=self.compose_name), hide=False, warn=True)
+            run("sudo /home/neradis/bin/docker-cleanup-volumes.sh".format(pn=self.compose_name), hide=False, warn=True)
         if self.keep_tmpdir is not True:
             if self.tmpdir:
                 shutil.rmtree(self.tmpdir, ignore_errors=True)
@@ -235,7 +252,7 @@ class ImportIntegrationTest(object):
 
         def look_for_completion_message():
             for line in iter(logtail.stdout.readline, b''):
-                TEST_LOG.debug("({t}) read line: {l}".format(l=line, t=time.time()))
+                #TEST_LOG.debug("({t}) read line: {l}".format(l=line, t=time.time()))
                 if timed_out.is_set():
                     return False
                 elif self._is_import_completed_msg(line):
@@ -296,5 +313,7 @@ if __name__ == '__main__':
 
     test_simple_config_with_dataset_from_cli_args()
     test_simple_config_no_default_graph()
-    # test_dbpedia_download_archives()
-    # test_dbpedia_download_archives_list()
+    test_simple_config_fail_when_default_graph_required_but_missing()
+    test_dbpedia_local_archives()
+    test_dbpedia_download_archives()
+    test_dbpedia_download_archives_list()
