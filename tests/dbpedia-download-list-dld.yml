@@ -9,7 +9,8 @@ components:
         ports: ["8891:8890"]
         environment:
             PWDDBA: herakiel
-    load: aksw/dld-load-virtuoso
+    load: 
+        image: aksw/dld-load-virtuoso
     present:
         - {
             image: aksw/dld-present-ontowiki,

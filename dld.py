@@ -1,6 +1,14 @@
 #! /usr/bin/env python
 
-from __future__ import print_function, division
+# Python2/3 compatibility layer - write Python 3-like code executable by a Python 2.7. runtime
+from __future__ import absolute_import, division, print_function, unicode_literals
+from __builtin__ import dict as py2dict  # remember original collection types
+from __builtin__ import list as py2list
+from future.standard_library import install_aliases
+
+install_aliases()
+from builtins import *
+
 import sys
 import os
 from os import path as osp
@@ -34,9 +42,6 @@ LAST_WORD_PATTERN = re.compile('[a-zA-Z0-9]+$')
 PROJECT_DIR = osp.dirname(osp.realpath(__file__))
 DLD_LOG = logging.getLogger('dld')
 
-py2list = list
-#py2list = list._builtin_list
-
 # TODO: check if we can use copy.deepcopy instead
 def ddict2dict(d):
     for k, v in d.items():
@@ -44,7 +49,7 @@ def ddict2dict(d):
             d[k] = ddict2dict(v)
         elif is_list_like(v):
             d[k] = py2list(v)
-    return dict(d)
+    return py2dict(d)
 
 
 def ensure_dir_exists(dir, log):
@@ -155,9 +160,9 @@ class ComposeConfigGenerator(object):
         self.configure_compose()
         # transformation back to standard dict required to keep pyyaml from serialising class metadata
         docker_compose_config = ddict2dict(self.compose_config)
-        DLD_LOG.debug(yaml.dump(docker_compose_config))
+        DLD_LOG.debug(yaml.safe_dump(docker_compose_config))
         with open(osp.join(self.working_directory, 'docker-compose.yml'), mode='w') as compose_fd:
-            yaml.dump(docker_compose_config, compose_fd)
+            yaml.safe_dump(docker_compose_config, compose_fd)
 
     def configure_compose(self):
         self.configure_store()
