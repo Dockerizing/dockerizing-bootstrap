@@ -5,6 +5,7 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from __builtin__ import dict as py2dict  # remember original collection types
 from __builtin__ import list as py2list
 from future.standard_library import install_aliases
+from data.datasets import ImportsCollector
 
 install_aliases()
 from builtins import *
@@ -52,11 +53,11 @@ def ddict2dict(d):
     return py2dict(d)
 
 
-def ensure_dir_exists(dir, log):
+def ensure_dir_exists(dir, log, warn_exists=True):
     if not os.path.exists(dir):
         os.makedirs(dir)
     else:
-        DEV_MODE and log.warning("The given path '{d}' already exists.".format(d=dir))
+        DEV_MODE and warn_exists and log.warning("The given path '{d}' already exists.".format(d=dir))
 
 
 DICT_LIKE_ATTRIBUTES = ('keys', 'iterkeys', 'get', 'update')
@@ -74,21 +75,18 @@ def is_list_like(obj):
     return _signature_testing(obj, LIST_LIKE_ATTRIBUTES)
 
 class ComposeConfigGenerator(object):
-    def __init__(self, configuration, working_directory):
-        self.configuration = configuration
-        self.working_directory = working_directory
+    def __init__(self, yaml_config, dld_config):
+        self.yaml_config = yaml_config
+        self.dld_config = dld_config
         self.log = logging.getLogger('dld.' + self.__class__.__name__)
         self.compose_config = ComposeConfigDefaultDict()
         self._steps_done = defaultdict(lambda: False)
-        self.log.debug("init - passed configuration:\n{}".format(self.configuration))
-        ensure_dir_exists(self.working_directory, self.log)
-        DLDConfig.models_dir = osp.join(self.working_directory, 'models')
-        ensure_dir_exists(DLDConfig.models_dir, self.log)
+        self.log.debug("init - passed configuration:\n{}".format(self.yaml_config))
 
     def run(self):
         # self.pull_images(self.configuration) #not using image metadata yet
         self.create_compose_config()
-        self.prepare_import_data(self.configuration["datasets"])
+        self.prepare_import_data(self.yaml_config["datasets"])
 
     def pull_images(self, config):
         docker = Client()
@@ -97,7 +95,7 @@ class ComposeConfigGenerator(object):
         # docker.inspect_image
 
     def _add_global_settings(self, component_settings):
-        global_settings = self.configuration.get('settings', dict())
+        global_settings = self.yaml_config.get('settings', dict())
         component_settings = is_dict_like(component_settings) and component_settings.copy() or dict()
         component_settings.update(global_settings)
         return component_settings
@@ -110,9 +108,9 @@ class ComposeConfigGenerator(object):
             compose_container_spec['environment']['DEFAULT_GRAPH'] = component_settings['default_graph']
 
     def _configure_singleton_component(self, component_name, settings_handler=None, additional_config_thunk=None):
-        if component_name not in self.configuration['components']:
+        if component_name not in self.yaml_config['components']:
             return
-        component_config = self.configuration['components'][component_name]
+        component_config = self.yaml_config['components'][component_name]
         compose_container_spec = self.compose_config[component_name]
 
         self._update_container_config(component_config, compose_container_spec,
@@ -127,10 +125,6 @@ class ComposeConfigGenerator(object):
                 raise RuntimeError("missing image declaration for component:\n{}".format(component_config))
         elif isinstance(component_config, str):
             return component_config
-
-    @staticmethod
-    def _valid_dataset_source_spec_keys():
-        return frozenset(['file', 'file_list', 'location', 'location_list'])
 
     def _update_container_config(self, component_config, compose_container_spec,
                                  settings_handler=None, additional_config_thunk=None):
@@ -160,8 +154,9 @@ class ComposeConfigGenerator(object):
         self.configure_compose()
         # transformation back to standard dict required to keep pyyaml from serialising class metadata
         docker_compose_config = ddict2dict(self.compose_config)
-        DLD_LOG.debug(yaml.safe_dump(docker_compose_config))
-        with open(osp.join(self.working_directory, 'docker-compose.yml'), mode='w') as compose_fd:
+        DLD_LOG.debug("\n" + yaml.safe_dump(docker_compose_config))
+        ensure_dir_exists(self.dld_config.working_dir, self.log, warn_exists=False)
+        with open(osp.join(self.dld_config.working_dir, 'docker-compose.yml'), mode='w') as compose_fd:
             yaml.safe_dump(docker_compose_config, compose_fd)
 
     def configure_compose(self):
@@ -182,9 +177,9 @@ class ComposeConfigGenerator(object):
         `docker-compose logs` will allow you to inspect the state of the setup processes.
 
         Have fun!""")
-        abs_wd = osp.realpath(self.working_directory)
+        abs_wd = osp.realpath(self.dld_config.working_dir)
         if DEV_MODE:
-            return "set up completed at {wd}".format(wd=abs_wd)
+            return "setup completed at {wd}".format(wd=abs_wd)
         else:
             return msg_tmpl.format(wd=abs_wd)
 
@@ -199,7 +194,7 @@ class ComposeConfigGenerator(object):
             # TODO This might also be done by reading the labels of the load container resp. for the other categories.
             # A stub for loding the images and reading the labels is in pull_images
             compose_container_spec['volumes_from'].append('store')
-            compose_container_spec['volumes'] = [osp.abspath(DLDConfig.models_dir) + ":/import"]
+            compose_container_spec['volumes'] = [osp.abspath(self.dld_config.models_dir) + ":/import"]
 
         if not self._steps_done['load']:
             self._configure_singleton_component('load', additional_config_thunk=additional_config)
@@ -227,9 +222,9 @@ class ComposeConfigGenerator(object):
         def additional_config(compose_container_spec):
             compose_container_spec['links'].append('store')
 
-        if ('present' not in self.configuration["components"]) or self._steps_done['present']:
+        if ('present' not in self.yaml_config["components"]) or self._steps_done['present']:
             return
-        present_component_group = self.configuration["components"]['present']
+        present_component_group = self.yaml_config["components"]['present']
         if is_dict_like(present_component_group):
             for comp_name, comp_config in present_component_group.items():
                 compose_name = 'present' + comp_name
@@ -267,40 +262,9 @@ class ComposeConfigGenerator(object):
         if not self._steps_done['store']:
             raise RuntimeError('[internal] cannot prepare import data before store configuration')
 
-        if DLDConfig.default_graph_name:
-            with open(osp.join(DLDConfig.models_dir, "global.graph"), "w") as graph_file:
-                graph_file.write(DLDConfig.default_graph_name + "\n")
-
-        for dataset_name, dataset_config in datasets_fragment.items():
-            keys = frozenset(dataset_config.keys())
-            source_spec_keywords = keys.intersection(datasets.DATASET_SPEC_TYPE_BY_KEYWORD.keys())
-            if len(source_spec_keywords) is not 1:
-                msg_tmpl = "None or several data source specifications ({opts} keys) defined for dataset:\n{ds}"
-                raise RuntimeError(msg_tmpl.format(ds=dataset_config,
-                                                   opts=" or ".join(self._valid_dataset_source_spec_keys())))
-
-            spec_keyword = next(iter(source_spec_keywords))
-            graph_name = dataset_config.get('graph_name')  # might be None
-            factory = datasets.DATASET_SPEC_TYPE_BY_KEYWORD[spec_keyword]
-            dataset_spec = factory(dataset_config[spec_keyword], graph_name)
-            dataset_spec.add_to_import_data()
-
-        # finally, remove dump files in the models dir that were there before but were not
-        # requested by the config
-        for dircontent in glob(osp.join(DLDConfig.models_dir, '*')):
-            if osp.isdir(dircontent):  # dld.py does not create subdirectories of the models directory
-                os.removedirs(dircontent)
-            elif osp.isfile(dircontent) and not dircontent.endswith('.graph'):
-                basename = FilenameOps.basename(dircontent)
-                stripped_ds_basename = FilenameOps.strip_ld_and_compession_extensions(basename)
-
-                if not datasets.DatasetMemory.was_added_or_retained(stripped_ds_basename):
-                    DLD_LOG.debug("removing extranous import data file: {f}".format(f=dircontent))
-                    os.remove(dircontent)
-                    # delete corresponding graph file, if it exists
-                    graph_file = osp.join(DLDConfig.models_dir, FilenameOps.graph_file_name(basename))
-                    if osp.isfile(graph_file):
-                        os.remove(graph_file)
+        ensure_dir_exists(self.dld_config.models_dir, self.log)
+        collector = ImportsCollector(self.dld_config)
+        collector.prepare(datasets_fragment)
 
 
 def usage():
@@ -309,6 +273,7 @@ def usage():
 
 def main(args=sys.argv[1:]):
     try:
+        # TODO: use better command line module generating more informative usage help
         opts, args = getopt.getopt(args, "hc:w:u:f:l:",
                                    ["help", "config=", "workingdirectory=", "uri=", "file=", "location="])
     except getopt.GetoptError as err:
@@ -318,13 +283,12 @@ def main(args=sys.argv[1:]):
         sys.exit(2)
 
     config_file = "dld.yml"
-    wd_from_cli = None
     uri_from_cli = None
     location_from_cli = None
     file_from_cli = None
 
-    DLDConfig.reset()
-    datasets.DatasetMemory.reset()  # TODO make this obsolete by embedding a DatasetMemory instance per config process
+    dld_config = DLDConfig()
+    dld_config.working_dir = None
 
     for opt, opt_val in opts:
         if opt in ("-h", "--help"):
@@ -333,7 +297,7 @@ def main(args=sys.argv[1:]):
         elif opt in ("-c", "--config"):
             config_file = opt_val
         elif opt in ("-w", "--workingdirectory"):
-            wd_from_cli = opt_val
+            dld_config.working_dir = opt_val
         elif opt in ("-u", "--uri"):
             uri_from_cli = opt_val
         elif opt in ("-f", "--file"):
@@ -344,46 +308,47 @@ def main(args=sys.argv[1:]):
             assert False, "unhandled option"
     # read configuration file
 
-    if not wd_from_cli:
-        wd_from_cli = 'wd-' + FilenameOps.strip_config_suffixes(osp.basename(config_file))
+    if not dld_config.working_dir:
+        dld_config.working_dir = 'wd-' + FilenameOps.strip_config_suffixes(osp.basename(config_file))
 
     with open(config_file, 'r') as config_fd:
-        user_config = yaml.load(config_fd)
+        yaml_config = yaml.load(config_fd)
 
     # Add command line arguments to configuration
     if any((uri_from_cli, file_from_cli, location_from_cli)):
         if uri_from_cli and (file_from_cli or location_from_cli):
-            if "datasets" not in user_config:
-                user_config["datasets"] = {}
-            if "settings" not in user_config:
-                user_config["settings"] = {}
-            if "cli" not in user_config["datasets"]:
-                user_config["datasets"]["cli"] = {}
+            if "datasets" not in yaml_config:
+                yaml_config["datasets"] = {}
+            if "settings" not in yaml_config:
+                yaml_config["settings"] = {}
+            if "cli" not in yaml_config["datasets"]:
+                yaml_config["datasets"]["cli"] = {}
             else:
                 raise RuntimeError("Reserved dataset key 'cli' used in configuration file")
 
-            user_config["datasets"]["cli"]["graph_name"] = uri_from_cli
+            yaml_config["datasets"]["cli"]["graph_name"] = uri_from_cli
             if file_from_cli:
-                user_config["datasets"]["cli"]["file"] = file_from_cli
+                yaml_config["datasets"]["cli"]["file"] = file_from_cli
             elif location_from_cli:
-                user_config["datasets"]["cli"]["location"] = location_from_cli
+                yaml_config["datasets"]["cli"]["location"] = location_from_cli
         else:
             DLD_LOG.error("only the combinations uri and file or uri and location are permitted")
             usage()
             sys.exit(2)
 
-    if is_dict_like(user_config.get("settings")):
-        DLDConfig.default_graph_name = user_config["settings"].get("default_graph")
+    if is_dict_like(yaml_config.get("settings")):
+        dld_config.default_graph_name = yaml_config["settings"].get("default_graph")
     if uri_from_cli:
-        DLDConfig.default_graph_name = uri_from_cli
+        dld_config.default_graph_name = uri_from_cli
 
-    if "datasets" not in user_config or "components" not in user_config:
+    if "datasets" not in yaml_config or "components" not in yaml_config:
         DLD_LOG.error("dataset and component configuration is needed")
         usage()
         sys.exit(2)
 
+    dld_config.ensure_required_settings()
     # start dld process
-    configurator = ComposeConfigGenerator(user_config, wd_from_cli)
+    configurator = ComposeConfigGenerator(yaml_config, dld_config)
     configurator.run()
     DLD_LOG.info(configurator.wd_ready_message)
 

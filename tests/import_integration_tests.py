@@ -190,7 +190,7 @@ class ImportIntegrationTest(object):
         self.tmpdir = None
 
     def __enter__(self):
-        self.tmpdir = tempfile.mkdtemp('wd', self.test_name, dir=TEST_TEMP_DIR)
+        self.tmpdir = tempfile.mkdtemp('_wd', self.test_name, dir=TEST_TEMP_DIR)
         self.dld_args += ['-w', self.tmpdir]
         return self
 

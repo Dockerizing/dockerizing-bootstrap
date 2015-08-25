@@ -13,65 +13,112 @@ import threading
 from urllib import urlretrieve
 import urllib2
 import urlparse
+from glob import glob
 
-from config import DLDConfig
 from tools import adjusted_socket_timeout, FilenameOps, HeadRequest
+
+class ImportsCollector(object):
+    log = logging.getLogger('dld.DatasetImportCollector')
+
+    def __init__(self, dld_config):
+        """
+        :param dld_config: DLDConfig instance
+        """
+        self.memory = DatasetMemory()
+        self.dld_config = dld_config
+
+    def prepare(self, datasets_config_fragment):
+        self._write_default_graph_name()
+        for dataset_name, dataset_config in datasets_config_fragment.items():
+            keys = frozenset(dataset_config.keys())
+            source_spec_keywords = keys.intersection(DATASET_SPEC_TYPE_BY_KEYWORD.keys())
+            if len(source_spec_keywords) is not 1:
+                msg_tmpl = "None or several data source specifications ({opts} keys) defined for dataset:\n{ds}"
+                raise RuntimeError(msg_tmpl.format(ds=dataset_config,
+                                                   opts=" or ".join(DATASET_SPEC_TYPE_BY_KEYWORD.keys())))
+
+            spec_keyword = next(iter(source_spec_keywords))
+            graph_name = dataset_config.get('graph_name')  # might be None
+            factory = DATASET_SPEC_TYPE_BY_KEYWORD[spec_keyword]
+            source_spec = dataset_config[spec_keyword]
+            dataset_spec = factory(source_spec, self.dld_config, self.memory, graph_name)
+            dataset_spec.add_to_import_data()
+        self._prune_target_directory()
+
+    def _write_default_graph_name(self):
+        if self.dld_config.default_graph_name:
+            with open(osp.join(self.dld_config.models_dir, "global.graph"), "w") as graph_file:
+                graph_file.write(self.dld_config.default_graph_name + "\n")
+
+    def _prune_target_directory(self):
+        for dircontent in glob(osp.join(self.dld_config.models_dir, '*')):
+            if osp.isdir(dircontent):  # dld.py does not create subdirectories of the models directory
+                os.removedirs(dircontent)
+            elif osp.isfile(dircontent) and not dircontent.endswith('.graph'):
+                basename = FilenameOps.basename(dircontent)
+                stripped_ds_basename = FilenameOps.strip_ld_and_compession_extensions(basename)
+
+                if not self.memory.was_added_or_retained(stripped_ds_basename):
+                    self.log.debug("removing extranous import data file: {f}".format(f=dircontent))
+                    os.remove(dircontent)
+                    # delete corresponding graph file, if it exists
+                    graph_file = osp.join(self.dld_config.models_dir, FilenameOps.graph_file_name(basename))
+                    if osp.isfile(graph_file):
+                        os.remove(graph_file)
+
 
 class DatasetMemory(object):
     """
     Remembers the files that were added to or retained in the models dir.
     """
-    lock = threading.RLock()
-    _added = set()
-    _retained = set()
-    _adding = set()
     log = logging.getLogger('dld.DatasetMemory')
 
-    @classmethod
-    def added_file(cls, stripped_basename):
-        with cls.lock:
-            cls._added.add(stripped_basename)
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._added = set()
+        self._retained = set()
+        self._adding = set()
 
-    @classmethod
-    def retained_file(cls, stripped_basename):
-        with cls.lock:
-            cls._retained.add(stripped_basename)
+    def added_file(self, stripped_basename):
+        with self._lock:
+            self._added.add(stripped_basename)
 
-    @classmethod
-    def was_added(cls, stripped_basename):
-        with cls.lock:
-            return stripped_basename in cls._added
+    def retained_file(self, stripped_basename):
+        with self._lock:
+            self._retained.add(stripped_basename)
 
-    @classmethod
-    def was_retained(cls, stripped_basename):
-        with cls.lock:
-            return stripped_basename in cls._retained
+    def was_added(self, stripped_basename):
+        with self._lock:
+            return stripped_basename in self._added
 
-    @classmethod
-    def was_added_or_retained(cls, stripped_basename):
-        with cls.lock:
-            return any((stripped_basename in s) for s in (cls._added, cls._retained))
+    def was_retained(self, stripped_basename):
+        with self._lock:
+            return stripped_basename in self._retained
 
-    @classmethod
-    def reset(cls):
-        with cls.lock:
-            cls._added = set()
-            cls._retained = set()
-            cls._adding = set()
+    def was_added_or_retained(self, stripped_basename):
+        with self._lock:
+            return any((stripped_basename in s) for s in (self._added, self._retained))
 
-    @classmethod
-    def adding_token(cls, stripped_basename):
+    def adding_token(self, stripped_basename):
+        """
+        Creates a context object, trying to obtain a lock for adding the named dataset.
+        The Lock will be released when the context is left and an exception will be thrown
+        then attempting to enter the context then an adding token was already given away
+        for the named dataset an not yet returned."""
+
+        outer_self = self
+
         class AddingDatasetToken(object):
             def __enter__(self):
-                with cls.lock:
-                    if stripped_basename in cls._adding:
+                with outer_self._lock:
+                    if stripped_basename in outer_self._adding:
                         raise DatasetAlreadyBeingAddedError("dataset {ds} is already being added")
                     else:
-                        cls._adding.add(stripped_basename)
+                        outer_self._adding.add(stripped_basename)
 
             def __exit__(self, *args):
-                with cls.lock:
-                    cls._adding.remove(stripped_basename)
+                with outer_self._lock:
+                    outer_self._adding.remove(stripped_basename)
 
         return AddingDatasetToken()
 
@@ -82,8 +129,19 @@ class DatasetAlreadyBeingAddedError(RuntimeError):
 
 
 class AbstractDatasetSpec(object):
-    def __init__(self, source, graph_name=None):
+    def __init__(self, source, dld_config, dataset_memory, graph_name=None):
+        """
+        ""
+        :param source: string describing the source
+        :param dld_config: a DLDConfig instance
+        :param dataset_memory: the DatasetMemory used by DatasetImportPreparator
+        :param graph_name: target named graph
+        :return:
+        """
+
         self.source = source
+        self.config = dld_config
+        self.memory = dataset_memory
         self.graph_name = graph_name
         self.skip = False
         self.log = logging.getLogger('dld.' + self.__class__.__name__)
@@ -98,11 +156,11 @@ class AbstractDatasetSpec(object):
 
     @property
     def target_path(self):
-        return osp.join(DLDConfig.models_dir, self.basename)
+        return osp.join(self.config.models_dir, self.basename)
 
     @property
     def graph_file_path(self):
-        return osp.join(DLDConfig.models_dir, FilenameOps.graph_file_name(self.basename))
+        return osp.join(self.config.models_dir, FilenameOps.graph_file_name(self.basename))
 
     def add_to_import_data(self):
         def duplicate_error():
@@ -111,12 +169,12 @@ class AbstractDatasetSpec(object):
             self.log.error(error)
             self._set_skip()
 
-        if DatasetMemory.was_added_or_retained(self.stripped_basename):
+        if self.memory.was_added_or_retained(self.stripped_basename):
             duplicate_error()
 
         if not self.skip:
             try:
-                with DatasetMemory.adding_token(self.stripped_basename):
+                with self.memory.adding_token(self.stripped_basename):
                     # TODO: catch errors and delete dataset and target graph files on error to clean up
                     self._ensure_copy()
                     self._ensure_graph_file()
@@ -126,16 +184,16 @@ class AbstractDatasetSpec(object):
                 self._set_skip()
 
     def _ensure_graph_file(self):
-        if not any((self.graph_name, DLDConfig.default_graph_name)):
+        if not any((self.graph_name, self.config.default_graph_name)):
             raise RuntimeError("No destination graph name defined for {bn}".format(bn=self.basename))
 
         # write a graph file if destination graph name differs from default destination graph name
-        if self.graph_name and (self.graph_name != DLDConfig.default_graph_name):
+        if self.graph_name and (self.graph_name != self.config.default_graph_name):
             with open(self.graph_file_path, "w") as graph_fd:
                 graph_fd.write(self.graph_name + "\n")
 
         # check if a previously written graph file is outdated or no longer required
-        if ((not self.graph_name) or (self.graph_name == DLDConfig.default_graph_name)) and \
+        if ((not self.graph_name) or (self.graph_name == self.config.default_graph_name)) and \
                 osp.isfile(self.graph_file_path):
             os.remove(self.graph_file_path)
 
@@ -152,8 +210,8 @@ class AbstractDatasetSpec(object):
 
 
 class FileDatasetSpec(AbstractDatasetSpec):
-    def __init__(self, source_path, graph_name=None):
-        AbstractDatasetSpec.__init__(self, source_path, graph_name)
+    def __init__(self, source_path, dld_config, dataset_memory, graph_name=None):
+        AbstractDatasetSpec.__init__(self, source_path, dld_config, dataset_memory, graph_name)
 
     @property
     def source_path(self):
@@ -163,18 +221,20 @@ class FileDatasetSpec(AbstractDatasetSpec):
         if osp.isfile(self.target_path) and osp.getsize(self.source_path) == osp.getsize(self.target_path):
             self.log.info("{tp} appears to be identical to {sp} - skipping copy"
                           .format(sp=self.source_path, tp=self.target_path))
-            DatasetMemory.retained_file(self.stripped_basename)
+            self.memory.retained_file(self.stripped_basename)
         else:
+            self.log.debug("starting copying for: {src}".format(src=self.source_path))
             shutil.copyfile(self.source_path, self.target_path)
-            DatasetMemory.added_file(self.stripped_basename)
+            self.log.debug("finished copying for: {src}".format(src=self.source_path))
+            self.memory.added_file(self.stripped_basename)
 
     def _extract_basename(self):
         return FilenameOps.basename(self.source)
 
 
-class HTTPLocationDatesetSpec(AbstractDatasetSpec):
-    def __init__(self, source_location, graph_name=None):
-        AbstractDatasetSpec.__init__(self, source_location, graph_name)
+class HTTPLocationDatasetSpec(AbstractDatasetSpec):
+    def __init__(self, source_location, dld_config, dataset_memory, graph_name=None):
+        AbstractDatasetSpec.__init__(self, source_location, dld_config, dataset_memory, graph_name)
 
     @property
     def source_location(self):
@@ -198,9 +258,9 @@ class HTTPLocationDatesetSpec(AbstractDatasetSpec):
                 skip_download = True
 
         if skip_download:
-            DatasetMemory.retained_file(self.stripped_basename)
+            self.memory.retained_file(self.stripped_basename)
         else:
-            DatasetMemory.added_file(self.stripped_basename)
+            self.memory.added_file(self.stripped_basename)
             # this (hopefully) sets a sensible 1 minute default for connection inactivity
             with adjusted_socket_timeout(60):
                 self.log.info("starting download: {u}".format(u=self.source_location))
@@ -237,29 +297,30 @@ class SourceListMixin(object):
 
 
 class FileListDatasetSpec(AbstractDatasetSpec, SourceListMixin):
-    def __init__(self, source, graph_name=None):
-        AbstractDatasetSpec.__init__(self, source, graph_name)
+    def __init__(self, source, dld_config, dataset_memory, graph_name=None):
+        AbstractDatasetSpec.__init__(self, source, dld_config, dataset_memory, graph_name)
 
     def add_to_import_data(self):
         self.handle_list()
 
     def atomic_spec_factory(self, source_description):
-        return FileDatasetSpec(source_description, self.graph_name)
+        return FileDatasetSpec(source_description, self.config, self.memory, self.graph_name)
 
 
 class HTTPLocationListDatasetSpec(AbstractDatasetSpec, SourceListMixin):
-    def __init__(self, source, graph_name=None):
-        AbstractDatasetSpec.__init__(self, source, graph_name)
+    def __init__(self,  source, dld_config, dataset_memory, graph_name=None):
+        AbstractDatasetSpec.__init__(self, source, dld_config, dataset_memory, graph_name)
 
     def add_to_import_data(self):
         self.handle_list()
 
     def atomic_spec_factory(self, source_description):
-        return HTTPLocationDatesetSpec(source_description, self.graph_name)
+        return HTTPLocationDatasetSpec(source_description, self.config,
+                                       self.memory, self.graph_name)
 
 DATASET_SPEC_TYPE_BY_KEYWORD = {
     'file': FileDatasetSpec,
-    'location': HTTPLocationDatesetSpec,
+    'location': HTTPLocationDatasetSpec,
     'file_list': FileListDatasetSpec,
     'location_list': HTTPLocationListDatasetSpec
 }
