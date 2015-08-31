@@ -9,6 +9,7 @@ from os import path as osp
 import re
 import socket
 import urllib2
+import urlparse
 
 # taken from a SO answer by Paul Manta
 # (http://stackoverflow.com/questions/31875/is-there-a-simple-elegant-way-to-define-singletons-in-python)
@@ -146,3 +147,26 @@ def adjusted_socket_timeout(timeout=60):
             socket.setdefaulttimeout(self.previous_timeout)
 
     return SockerTimeoutAdjustment()
+
+class LocationError(Exception):
+    pass
+
+def check_http_url(location_str):
+    parsed_url = urlparse.urlparse(location_str)
+    if parsed_url.scheme not in ('http', 'https'):
+        msg = "location does not appear to be a http(s)-URL:\n{loc}".format(loc=location_str)
+        raise LocationError(msg)
+
+DICT_LIKE_ATTRIBUTES = ('keys', 'iterkeys', 'get', 'update')
+LIST_LIKE_ATTRIBUTES = ('insert', 'reverse', 'sort', 'pop')
+
+def _signature_testing(obj, expected_attributes):
+    attr_checks = map(lambda attr: hasattr(obj, attr), expected_attributes)
+    return all(attr_checks)
+
+def is_dict_like(obj):
+    return _signature_testing(obj, DICT_LIKE_ATTRIBUTES)
+
+
+def is_list_like(obj):
+    return _signature_testing(obj, LIST_LIKE_ATTRIBUTES)

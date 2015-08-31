@@ -33,6 +33,7 @@ def test_simple_config_with_dataset_from_cli_args():
     graph_name = 'http://dld.aksw.org/testing#'
     import_file = osp.join(TEST_DIR, 'single_triple.ttl')
     config_file = osp.join(TEST_DIR, 'simple-dld.yml')
+    osp.isfile(config_file).should.be(True)
     osp.isfile(import_file).should.be(True)
     dld_args = ['-f', import_file, '-u', graph_name, '-c', config_file]
     expected_counts = {'http://dld.aksw.org/testing#': 1}

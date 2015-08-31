@@ -5,7 +5,6 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 from __builtin__ import dict as py2dict  # remember original collection types
 from __builtin__ import list as py2list
 from future.standard_library import install_aliases
-from data.datasets import ImportsCollector
 
 install_aliases()
 from builtins import *
@@ -13,23 +12,20 @@ from builtins import *
 import sys
 import os
 from os import path as osp
-from glob import glob
-import getopt
+import argparse as ap
 import re
 import logging
 import logging.config
 from collections import defaultdict
 from textwrap import dedent
-
-try:
-    import urlparse
-except ImportError:
-    from urllib import parse as urlparse
 import tempfile
 
 import yaml
 import httplib2
 from docker import Client
+
+from data.datasets import ImportsCollector
+from tools import check_http_url, is_dict_like, is_list_like
 
 if __name__ != '__main__':
     from dldbase import DEV_MODE
@@ -59,20 +55,6 @@ def ensure_dir_exists(dir, log, warn_exists=True):
     else:
         DEV_MODE and warn_exists and log.warning("The given path '{d}' already exists.".format(d=dir))
 
-
-DICT_LIKE_ATTRIBUTES = ('keys', 'iterkeys', 'get', 'update')
-LIST_LIKE_ATTRIBUTES = ('insert', 'reverse', 'sort', 'pop')
-
-def _signature_testing(obj, expected_attributes):
-    attr_checks = map(lambda attr: hasattr(obj, attr), expected_attributes)
-    return all(attr_checks)
-
-
-def is_dict_like(obj):
-    return _signature_testing(obj, DICT_LIKE_ATTRIBUTES)
-
-def is_list_like(obj):
-    return _signature_testing(obj, LIST_LIKE_ATTRIBUTES)
 
 class ComposeConfigGenerator(object):
     def __init__(self, yaml_config, dld_config):
@@ -166,7 +148,7 @@ class ComposeConfigGenerator(object):
 
     @property
     def wd_ready_message(self):
-        msg_tmpl = dedent(""" \
+        msg_tmpl = dedent("""\
         Your docker-compose configuration and import data has been set up at '{wd}'.
         Now change into that directory and invoke `docker-compose up -d` to start  the components
         (possibly triggering also the data import process)
@@ -267,56 +249,55 @@ class ComposeConfigGenerator(object):
         collector.prepare(datasets_fragment)
 
 
-def usage():
-    DLD_LOG.warning("please read at http://dld.aksw.org/ for further instructions")
+def build_argument_parser():
+    helptexts = {
+        'app_descr': "DLD command line tool to orchestrate Linked Data tools.",
+        'app_epilog': "See http://dld.aksw.org/ for further explanation and instructions.",
+        'config-file': "the *-dld.yml file specifying the desired LD tool orchestration (defaults to 'dld.yml')",
+        'working-dir': "target directory for compose configuration and collected LD dumps for import",
+        'target-named-graph': "named graph as destination for LD to import specified with the -f or -l option",
+        'dump-file': "LD dump file to import into RDF storage solution",
+        'dump-location': "location (as URL) of dump file to download and import into RDF storage solution",
+        'help': "print this usage/help info"
+    }
 
+    def file_realpath(path_str):
+        try:
+            assert osp.isfile(path_str)
+            return osp.realpath(path_str)
+        except AssertionError:
+            raise RuntimeError("Cannot find a file at '{p}'".format(p=path_str))
+
+    parser = ap.ArgumentParser(prog='dld.py', description=helptexts['app_descr'], epilog=helptexts['app_epilog'])
+    parser.add_argument("-c", "--config-file", default='dld.yml', help=helptexts['config-file'])
+    parser.add_argument("-w", "--working-dir", default=None, help=helptexts['working-dir'])
+    parser.add_argument("-u", "--target-named-graph", default=None,
+                        help=helptexts['target-named-graph'])
+    parser.add_argument("-f", "--dump-file", type=file_realpath, default=None,
+                        help=helptexts['dump-file'])
+    parser.add_argument("-l", "--dump-location", default=None, type=check_http_url,
+                        help=helptexts['dump-location'])
+
+    return parser
 
 def main(args=sys.argv[1:]):
-    try:
-        # TODO: use better command line module generating more informative usage help
-        opts, args = getopt.getopt(args, "hc:w:u:f:l:",
-                                   ["help", "config=", "workingdirectory=", "uri=", "file=", "location="])
-    except getopt.GetoptError as err:
-        # print help information and exit:
-        DLD_LOG.error(err)  # will print something like "option -a not recognized"
-        usage()
-        sys.exit(2)
-
-    config_file = "dld.yml"
-    uri_from_cli = None
-    location_from_cli = None
-    file_from_cli = None
+    argparser = build_argument_parser()
+    args_ns = argparser.parse_args(args)
+    args_dict = vars(args_ns)
 
     dld_config = DLDConfig()
-    dld_config.working_dir = None
-
-    for opt, opt_val in opts:
-        if opt in ("-h", "--help"):
-            usage()
-            sys.exit()
-        elif opt in ("-c", "--config"):
-            config_file = opt_val
-        elif opt in ("-w", "--workingdirectory"):
-            dld_config.working_dir = opt_val
-        elif opt in ("-u", "--uri"):
-            uri_from_cli = opt_val
-        elif opt in ("-f", "--file"):
-            file_from_cli = opt_val
-        elif opt in ("-l", "--location"):
-            location_from_cli = opt_val
-        else:
-            assert False, "unhandled option"
-    # read configuration file
+    dld_config.working_dir = args_ns.working_dir
 
     if not dld_config.working_dir:
-        dld_config.working_dir = 'wd-' + FilenameOps.strip_config_suffixes(osp.basename(config_file))
+        dld_config.working_dir = 'wd-' + FilenameOps.strip_config_suffixes(
+            osp.basename(args_ns.config_file))
 
-    with open(config_file, 'r') as config_fd:
+    with open(args_ns.config_file, 'r') as config_fd:
         yaml_config = yaml.load(config_fd)
 
     # Add command line arguments to configuration
-    if any((uri_from_cli, file_from_cli, location_from_cli)):
-        if uri_from_cli and (file_from_cli or location_from_cli):
+    if any((args_ns.target_named_graph, args_ns.dump_file, args_ns.dump_location)):
+        if args_ns.target_named_graph and (args_ns.dump_file or args_ns.dump_location):
             if "datasets" not in yaml_config:
                 yaml_config["datasets"] = {}
             if "settings" not in yaml_config:
@@ -326,24 +307,24 @@ def main(args=sys.argv[1:]):
             else:
                 raise RuntimeError("Reserved dataset key 'cli' used in configuration file")
 
-            yaml_config["datasets"]["cli"]["graph_name"] = uri_from_cli
-            if file_from_cli:
-                yaml_config["datasets"]["cli"]["file"] = file_from_cli
-            elif location_from_cli:
-                yaml_config["datasets"]["cli"]["location"] = location_from_cli
+            yaml_config["datasets"]["cli"]["graph_name"] = args_ns.target_named_graph
+            if args_ns.dump_file:
+                yaml_config["datasets"]["cli"]["file"] = args_ns.dump_file
+            elif args_ns.dump_location:
+                yaml_config["datasets"]["cli"]["location"] = args_ns.dump_location
         else:
             DLD_LOG.error("only the combinations uri and file or uri and location are permitted")
-            usage()
+            argparser.print_usage()
             sys.exit(2)
 
     if is_dict_like(yaml_config.get("settings")):
         dld_config.default_graph_name = yaml_config["settings"].get("default_graph")
-    if uri_from_cli:
-        dld_config.default_graph_name = uri_from_cli
+    if args_ns.target_named_graph:
+        dld_config.default_graph_name = args_ns.target_named_graph
 
     if "datasets" not in yaml_config or "components" not in yaml_config:
         DLD_LOG.error("dataset and component configuration is needed")
-        usage()
+        argparser.print_usage()
         sys.exit(2)
 
     dld_config.ensure_required_settings()
