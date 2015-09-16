@@ -31,15 +31,15 @@ class ImportsCollector(object):
         self._write_default_graph_name()
         for dataset_name, dataset_config in datasets_config_fragment.items():
             keys = frozenset(dataset_config.keys())
-            source_spec_keywords = keys.intersection(DATASET_SPEC_TYPE_BY_KEYWORD.keys())
+            source_spec_keywords = keys.intersection(DATASET_SPEC_FACTORY_BY_KEYWORD.keys())
             if len(source_spec_keywords) is not 1:
                 msg_tmpl = "None or several data source specifications ({opts} keys) defined for dataset:\n{ds}"
                 raise RuntimeError(msg_tmpl.format(ds=dataset_config,
-                                                   opts=" or ".join(DATASET_SPEC_TYPE_BY_KEYWORD.keys())))
+                                                   opts=" or ".join(DATASET_SPEC_FACTORY_BY_KEYWORD.keys())))
 
             spec_keyword = next(iter(source_spec_keywords))
             graph_name = dataset_config.get('graph_name')  # might be None
-            factory = DATASET_SPEC_TYPE_BY_KEYWORD[spec_keyword]
+            factory = DATASET_SPEC_FACTORY_BY_KEYWORD[spec_keyword]
             source_spec = dataset_config[spec_keyword]
             dataset_spec = factory(source_spec, self.dld_config, self.memory, graph_name)
             dataset_spec.add_to_import_data()
@@ -59,7 +59,7 @@ class ImportsCollector(object):
                 stripped_ds_basename = FilenameOps.strip_ld_and_compession_extensions(basename)
 
                 if not self.memory.was_added_or_retained(stripped_ds_basename):
-                    self.log.debug("removing extranous import data file: {f}".format(f=dircontent))
+                    self.log.debug("removing extraneous import data file: {f}".format(f=dircontent))
                     os.remove(dircontent)
                     # delete corresponding graph file, if it exists
                     graph_file = osp.join(self.dld_config.models_dir, FilenameOps.graph_file_name(basename))
@@ -318,7 +318,7 @@ class HTTPLocationListDatasetSpec(AbstractDatasetSpec, SourceListMixin):
         return HTTPLocationDatasetSpec(source_description, self.config,
                                        self.memory, self.graph_name)
 
-DATASET_SPEC_TYPE_BY_KEYWORD = {
+DATASET_SPEC_FACTORY_BY_KEYWORD = {
     'file': FileDatasetSpec,
     'location': HTTPLocationDatasetSpec,
     'file_list': FileListDatasetSpec,

@@ -30,7 +30,7 @@ from tools import check_http_url, is_dict_like, is_list_like
 if __name__ != '__main__':
     from dldbase import DEV_MODE
 
-from data import datasets
+from dldbase import dockerutil, logutil
 from config import DLDConfig
 from tools import FilenameOps, ComposeConfigDefaultDict, HeadRequest, alpha_gen
 
@@ -49,11 +49,11 @@ def ddict2dict(d):
     return py2dict(d)
 
 
-def ensure_dir_exists(dir, log, warn_exists=True):
-    if not os.path.exists(dir):
-        os.makedirs(dir)
+def ensure_dir_exists(directory, log, warn_exists=True):
+    if not os.path.exists(directory):
+        os.makedirs(directory)
     else:
-        DEV_MODE and warn_exists and log.warning("The given path '{d}' already exists.".format(d=dir))
+        DEV_MODE and warn_exists and log.warning("The given path '{d}' already exists.".format(d=directory))
 
 
 class ComposeConfigGenerator(object):
@@ -176,17 +176,20 @@ class ComposeConfigGenerator(object):
             # TODO This might also be done by reading the labels of the load container resp. for the other categories.
             # A stub for loding the images and reading the labels is in pull_images
             compose_container_spec['volumes_from'].append('store')
-            compose_container_spec['volumes'] = [osp.abspath(self.dld_config.models_dir) + ":/import"]
+            import_vol_dest = '/import'
+            if self.dld_config.selinux_volumes_tweaks_supported:
+                import_vol_dest += ':z'
+            compose_container_spec['volumes'] = [osp.abspath(self.dld_config.models_dir) + ":" + import_vol_dest]
 
         if not self._steps_done['load']:
             self._configure_singleton_component('load', additional_config_thunk=additional_config)
             self._steps_done['load'] = True
 
-    def _extract_last_word(str, fallback=None):
+    def _extract_last_word(string, fallback=None):
         try:
-            return next(LAST_WORD_PATTERN.finditer(str)).group(0)
+            return next(LAST_WORD_PATTERN.finditer(string)).group(0)
         except StopIteration:
-            if isinstance(fallback, str):
+            if isinstance(fallback, string):
                 return fallback
             raise RuntimeError("unable to find last word")
 
@@ -341,8 +344,7 @@ if __name__ == "__main__":
     if os.getcwd() != PROJECT_DIR:
         sys.path.append(PROJECT_DIR)
 
-    from dldbase.logging import logging_init
     from dldbase import DEV_MODE
 
-    logging_init(osp.join(PROJECT_DIR, 'logs'))
+    logutil.logging_init(osp.join(PROJECT_DIR, 'logs'))
     main()

@@ -5,4 +5,4 @@ from future.standard_library import install_aliases
 install_aliases()
 from builtins import *
 
-from .datasets import DATASET_SPEC_TYPE_BY_KEYWORD
+from .datasets import DATASET_SPEC_FACTORY_BY_KEYWORD

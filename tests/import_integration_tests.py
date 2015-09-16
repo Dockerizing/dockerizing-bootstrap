@@ -22,7 +22,6 @@ TEST_LOG = logging.getLogger('dld.test')
 TEST_TEMP_DIR = os.environ.get('DLD_TEST_TMP')
 VOS_IMPORT_COMPLETED_PATTERN = re.compile(r'done loading graphs \(start hanging around idle\)')
 
-
 def test_simple_config_with_dataset_from_cli_args():
     """
         test scenario for 'simple config with data from cli args':
@@ -173,6 +172,23 @@ def test_dbpedia_download_archives_list():
         test.run()
 
 
+INTEGRATION_TESTS_SPEED_3 = [test_simple_config_with_dataset_from_cli_args,
+                             test_simple_config_default_config_name_wd_is_cwd,
+                             test_simple_config_fail_when_default_graph_required_but_missing,
+                             test_simple_config_no_default_graph]
+
+INTEGRATION_TESTS_SPEED_4 = [test_dbpedia_local_archives, test_dbpedia_local_archives_list,
+                             test_dbpedia_download_archives, test_dbpedia_download_archives_list]
+
+for test in INTEGRATION_TESTS_SPEED_3 + INTEGRATION_TESTS_SPEED_4:
+    test.test_kind = 'integration'
+
+for test in INTEGRATION_TESTS_SPEED_3:
+    test.test_speed = 3
+
+for test in INTEGRATION_TESTS_SPEED_4:
+    test.test_speed = 4
+
 class ImportIntegrationTest(object):
     def __init__(self, test_name='import_test', dld_args=[], import_timeout=30,
                  store_port=8891, expected_triple_counts=dict(), keep_tmpdir=False,
@@ -303,7 +319,7 @@ if __name__ == '__main__':
     sys.path.append(PROJECT_DIR)
     sys.path.append(osp.join(PROJECT_DIR, 'baselibs', 'python'))
 
-    from dldbase.logging import logging_init
+    from dldbase.logutil import logging_init
 
     logging_init(osp.join(PROJECT_DIR, 'logs'))
 
