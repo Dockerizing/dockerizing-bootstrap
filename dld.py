@@ -27,11 +27,11 @@ from docker import Client
 from data.datasets import ImportsCollector
 from tools import check_http_url, is_dict_like, is_list_like
 
+#non-dererred import when this is not run as main script (e.g. through nosetests)
 if __name__ != '__main__':
     from dldbase import DEV_MODE
+    from config import DLDConfig
 
-from dldbase import dockerutil, logutil
-from config import DLDConfig
 from tools import FilenameOps, ComposeConfigDefaultDict, HeadRequest, alpha_gen
 
 LAST_WORD_PATTERN = re.compile('[a-zA-Z0-9]+$')
@@ -344,7 +344,9 @@ if __name__ == "__main__":
     if os.getcwd() != PROJECT_DIR:
         sys.path.append(PROJECT_DIR)
 
-    from dldbase import DEV_MODE
+    #deferred imports, since PYTHONPATH needed to be tweaked before (interim solution)
+    from dldbase import DEV_MODE, logutil
+    from config import DLDConfig
 
     logutil.logging_init(osp.join(PROJECT_DIR, 'logs'))
     main()
