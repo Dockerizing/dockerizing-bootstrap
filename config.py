@@ -10,7 +10,7 @@ from os import path as osp
 
 from dldbase import dockerutil
 
-SELINUX_VOLUME_ADJUSTMENT_DOCKER_VERSIONS_PATTERN = re.compile('^(1\.[7-9])|(2\.)')
+SELINUX_VOLUME_ADJUSTMENT_DOCKER_VERSIONS_PATTERN = re.compile('^(1\.([7-9]|(\d\d)))|(2\.)')
 
 class DLDConfig(object):
     __required_settings = {'working_dir': unicode, 'models_dir': unicode}
