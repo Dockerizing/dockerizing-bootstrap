@@ -1,10 +1,19 @@
+datasets:
+    example:
+        graph_name: "http://dbpedia.org"
+        file: "/dev/null"
+
 components:
     store:
         image: aksw/dld-store-virtuoso7
-        ports: ["8895:8890"]
+        environment:
+            PWDDBA: "aslkdcoiqwecpqow"
     load:
         image: aksw/dld-load-virtuoso
     present:
         ontowiki:
             image: aksw/dld-present-ontowiki
-            port: 8080
+            ports: ["8080:80"]
+
+settings:
+    default_graph: "http://pfarrerbuch.comiles.eu/"
