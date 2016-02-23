@@ -1,18 +1,10 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-from future.standard_library import install_aliases
-
-install_aliases()
-from builtins import *
-
 import logging
 import os
 from os import path as osp
 import shutil
 import threading
-from urllib import urlretrieve
-import urllib2
-import urlparse
+from urllib.request import urlretrieve, urlopen
+import urllib
 from glob import glob
 
 from tools import adjusted_socket_timeout, FilenameOps, HeadRequest
@@ -243,9 +235,9 @@ class HTTPLocationDatasetSpec(AbstractDatasetSpec):
     def _ensure_copy(self):
         def get_content_size():
             try:
-                response = urllib2.urlopen(HeadRequest(self.source_location), timeout=60)
+                response = urllib.request.urlopen(HeadRequest(self.source_location), timeout=60)
                 length_str = response.headers.getheader('content-length')
-                return (length_str is not None) and long(length_str) or None
+                return (length_str is not None) and int(length_str) or None
             except:
                 self.log.exception("error getting HEAD for {u}".format(u=self.source_location))
                 return None
@@ -268,7 +260,7 @@ class HTTPLocationDatasetSpec(AbstractDatasetSpec):
                 self.log.info("download finished: {u}".format(u=self.source_location))
 
     def _extract_basename(self):
-        parsed_url = urlparse.urlparse(self.source)
+        parsed_url = urllib.parse.urlparse(self.source)
         if parsed_url.scheme not in ['http', 'https']:
             self.skip = True
             error = RuntimeError("location does not appear to be a http(s)-URL:\n{loc}".format(loc=self.source))
@@ -315,8 +307,7 @@ class HTTPLocationListDatasetSpec(AbstractDatasetSpec, SourceListMixin):
         self.handle_list()
 
     def atomic_spec_factory(self, source_description):
-        return HTTPLocationDatasetSpec(source_description, self.config,
-                                       self.memory, self.graph_name)
+        return HTTPLocationDatasetSpec(source_description, self.config, self.memory, self.graph_name)
 
 DATASET_SPEC_FACTORY_BY_KEYWORD = {
     'file': FileDatasetSpec,

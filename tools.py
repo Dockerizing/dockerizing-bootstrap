@@ -1,15 +1,8 @@
-from __future__ import absolute_import, division, print_function, unicode_literals
-
-from future.standard_library import install_aliases
-
-install_aliases()
-from builtins import *
-
 from os import path as osp
 import re
 import socket
-import urllib2
-import urlparse
+from urllib.request import Request
+from urllib.parse import urlparse
 
 # taken from a SO answer by Paul Manta
 # (http://stackoverflow.com/questions/31875/is-there-a-simple-elegant-way-to-define-singletons-in-python)
@@ -94,7 +87,7 @@ class FilenameOps(object):
         return match_attempt and match_attempt.group(1) or string
 
 
-class HeadRequest(urllib2.Request):
+class HeadRequest(Request):
     def get_method(self):
         return "HEAD"
 
@@ -151,13 +144,14 @@ def adjusted_socket_timeout(timeout=60):
 class LocationError(Exception):
     pass
 
-def check_http_url(location_str):
-    parsed_url = urlparse.urlparse(location_str)
+def http_url(location_str):
+    parsed_url = urlparse(location_str)
     if parsed_url.scheme not in ('http', 'https'):
         msg = "location does not appear to be a http(s)-URL:\n{loc}".format(loc=location_str)
         raise LocationError(msg)
+    return location_str
 
-DICT_LIKE_ATTRIBUTES = ('keys', 'iterkeys', 'get', 'update')
+DICT_LIKE_ATTRIBUTES = ('keys', 'get', 'update')
 LIST_LIKE_ATTRIBUTES = ('insert', 'reverse', 'sort', 'pop')
 
 def _signature_testing(obj, expected_attributes):

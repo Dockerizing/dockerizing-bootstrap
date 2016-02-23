@@ -1,10 +1,3 @@
-# Python2/3 compatibility layer - write Python 3-like code executable by a Python 2.7. runtime
-from __future__ import absolute_import, division, print_function, unicode_literals
-from future.standard_library import install_aliases
-
-install_aliases()
-from builtins import *
-
 import re
 from os import path as osp
 
@@ -13,7 +6,7 @@ from dldbase import dockerutil
 SELINUX_VOLUME_ADJUSTMENT_DOCKER_VERSIONS_PATTERN = re.compile('^(1\.([7-9]|(\d\d)))|(2\.)')
 
 class DLDConfig(object):
-    __required_settings = {'working_dir': unicode, 'models_dir': unicode}
+    __required_settings = {'working_dir': str, 'models_dir': str}
 
     def __init__(self):
         self.__models_dir = None

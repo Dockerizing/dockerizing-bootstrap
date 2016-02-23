@@ -1,14 +1,4 @@
 #! /usr/bin/env python
-
-# Python2/3 compatibility layer - write Python 3-like code executable by a Python 2.7. runtime
-from __future__ import absolute_import, division, print_function, unicode_literals
-from __builtin__ import dict as py2dict  # remember original collection types
-from __builtin__ import list as py2list
-from future.standard_library import install_aliases
-
-install_aliases()
-from builtins import *
-
 import sys
 import os
 from os import path as osp
@@ -25,7 +15,7 @@ import httplib2
 from docker import Client
 
 from data.datasets import ImportsCollector
-from tools import check_http_url, is_dict_like, is_list_like
+from tools import http_url, is_dict_like, is_list_like
 
 #non-dererred import when this is not run as main script (e.g. through nosetests)
 if __name__ != '__main__':
@@ -45,8 +35,8 @@ def ddict2dict(d):
         if is_dict_like(v):
             d[k] = ddict2dict(v)
         elif is_list_like(v):
-            d[k] = py2list(v)
-    return py2dict(d)
+            d[k] = list(v)
+    return dict(d)
 
 
 def ensure_dir_exists(directory, log, warn_exists=True):
@@ -278,7 +268,7 @@ def build_argument_parser():
                         help=helptexts['target-named-graph'])
     parser.add_argument("-f", "--dump-file", type=file_realpath, default=None,
                         help=helptexts['dump-file'])
-    parser.add_argument("-l", "--dump-location", default=None, type=check_http_url,
+    parser.add_argument("-l", "--dump-location", default=None, type=http_url,
                         help=helptexts['dump-location'])
 
     return parser
@@ -286,8 +276,9 @@ def build_argument_parser():
 def main(args=sys.argv[1:]):
     argparser = build_argument_parser()
     args_ns = argparser.parse_args(args)
-    args_dict = vars(args_ns)
 
+    #deferring DLDConfig import until here to allow getting CLI --help also when the Docker deamon is not accessible
+    from config import DLDConfig
     dld_config = DLDConfig()
     dld_config.working_dir = args_ns.working_dir
 
@@ -316,7 +307,7 @@ def main(args=sys.argv[1:]):
             elif args_ns.dump_location:
                 yaml_config["datasets"]["cli"]["location"] = args_ns.dump_location
         else:
-            DLD_LOG.error("only the combinations uri and file or uri and location are permitted")
+            DLD_LOG.error("only the combinations (graph uri and file) or (graph uri and location) are permitted")
             argparser.print_usage()
             sys.exit(2)
 
@@ -346,7 +337,6 @@ if __name__ == "__main__":
 
     #deferred imports, since PYTHONPATH needed to be tweaked before (interim solution)
     from dldbase import DEV_MODE, logutil
-    from config import DLDConfig
 
     logutil.logging_init(osp.join(PROJECT_DIR, 'logs'))
     main()

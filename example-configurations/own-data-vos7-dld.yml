@@ -2,5 +2,8 @@ components:
     store:
         image: aksw/dld-store-virtuoso7
         ports: ["8891:8890"]
+        cpuset: "0"
+        mem_limit: "1G"
     load:
         image: aksw/dld-load-virtuoso
+        cpuset: "0"

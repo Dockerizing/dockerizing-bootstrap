@@ -1,4 +1,3 @@
-from __future__ import print_function, division
 import tempfile
 import shutil
 import os
@@ -22,13 +21,13 @@ TEST_LOG = logging.getLogger('dld.test')
 TEST_TEMP_DIR = os.environ.get('DLD_TEST_TMP')
 VOS_IMPORT_COMPLETED_PATTERN = re.compile(r'done loading graphs \(start hanging around idle\)')
 
-def test_simple_config_with_dataset_from_cli_args():
+def test_simple_config_with_import_file_from_cli_args():
     """
         test scenario for 'simple config with data from cli args':
             * only a single local file specified to import as CLI option
             * absolute path for config and file to import
     """
-    test_name = 'test_simple_config_with_dataset_from_cli_args'
+    test_name = 'test_simple_config_with_import_file_from_cli_args'
     graph_name = 'http://dld.aksw.org/testing#'
     import_file = osp.join(TEST_DIR, 'single_triple.ttl')
     config_file = osp.join(TEST_DIR, 'simple-dld.yml')
@@ -39,6 +38,21 @@ def test_simple_config_with_dataset_from_cli_args():
     with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
         test.run()
 
+def test_simple_config_with_import_location_from_cli_args():
+    """
+        test scenario for 'simple config with import location from cli args':
+            * only a single download location specified to import as CLI option
+            * absolute path for config
+    """
+    test_name = 'test_simple_config_with_import_location_from_cli_args'
+    graph_name = 'http://dld.aksw.org/testing#'
+    import_loc = 'https://raw.githubusercontent.com/Dockerizing/dockerizing-bootstrap/master/tests/single_triple.ttl'
+    config_file = osp.join(TEST_DIR, 'simple-dld.yml')
+    osp.isfile(config_file).should.be(True)
+    dld_args = ['-l', import_loc, '-u', graph_name, '-c', config_file]
+    expected_counts = {'http://dld.aksw.org/testing#': 1}
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
+        test.run()
 
 def test_simple_config_default_config_name_wd_is_cwd():
     """
@@ -50,13 +64,15 @@ def test_simple_config_default_config_name_wd_is_cwd():
     """
     test_name = 'test_simple_config_default_config_name_wd_is_cwd'
     graph_name = 'http://dld.aksw.org/testing#'
-    import_file_src = osp.join(TEST_DIR, 'single_triple.ttl')
-    config_file_src = osp.join(TEST_DIR, 'simple-dld.yml')
+    import_file = osp.join(TEST_DIR, 'single_triple.ttl')
+    config_file = osp.join(TEST_DIR, 'simple-dld.yml')
+    osp.isfile(config_file).should.be(True)
+    osp.isfile(import_file).should.be(True)
     dld_args = ['-f', 'single_triple.ttl', '-u', graph_name, '-w', '.']
     expected_counts = {'http://dld.aksw.org/testing#': 1}
     with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
-        shutil.copy(import_file_src, test.tmpdir)
-        shutil.copy(config_file_src, osp.join(test.tmpdir, 'dld.yml'))
+        shutil.copy(import_file, test.tmpdir)
+        shutil.copy(config_file, osp.join(test.tmpdir, 'dld.yml'))
         test.run()
 
 
@@ -77,7 +93,7 @@ def test_simple_config_fail_when_default_graph_required_but_missing():
         shutil.copy(import_file, test.tmpdir)
         test.run.when.called.should.throw(RuntimeError)
 
-def test_simple_config_no_default_graph():
+def test_simple_file_config_no_default_graph():
     """
         test scenario for 'simple config, no default graph':
             * only a single local file specified in config
@@ -85,15 +101,33 @@ def test_simple_config_no_default_graph():
             * relative path for default config and file to import
             * do no generate separate working subdirectory
     """
-    test_name = 'test_simple_config_no_default_graph'
-    import_file_src = osp.join(TEST_DIR, 'single_triple.ttl')
-    config_file_src = osp.join(TEST_DIR, 'simple-graph-defined-dld.yml')
-    dld_args = ['-w', '.', '-c', config_file_src]
+    test_name = 'test_simple_file_config_no_default_graph'
+    import_file = osp.join(TEST_DIR, 'single_triple.ttl')
+    config_file = osp.join(TEST_DIR, 'simple-graph-defined-dld.yml')
+    osp.isfile(config_file).should.be(True)
+    osp.isfile(import_file).should.be(True)
+    dld_args = ['-w', '.', '-c', config_file]
     expected_counts = {'http://dld.aksw.org/testing#': 1}
     with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
-        shutil.copy(import_file_src, test.tmpdir)
+        shutil.copy(import_file, test.tmpdir)
         test.run()
 
+def test_simple_location_config_no_default_graph():
+    """
+        test scenario for 'simple config, no default graph':
+            * only a single download location specified in config
+            * do default graph specified
+            * relative path for default config and file to import
+            * do no generate separate working subdirectory
+    """
+    test_name = 'test_simple_file_config_no_default_graph'
+    config_file = osp.join(TEST_DIR, 'simple-download-graph-defined-dld.yml')
+    dld_args = ['-w', '.', '-c', config_file]
+    expected_counts = {'http://dld.aksw.org/testing#': 1}
+    osp.isfile(config_file).should.be(True)
+
+    with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
+        test.run()
 
 def test_dbpedia_local_archives():
     """
@@ -172,10 +206,11 @@ def test_dbpedia_download_archives_list():
         test.run()
 
 
-INTEGRATION_TESTS_SPEED_3 = [test_simple_config_with_dataset_from_cli_args,
+INTEGRATION_TESTS_SPEED_3 = [test_simple_config_with_import_file_from_cli_args,
+                             test_simple_config_with_import_location_from_cli_args,
                              test_simple_config_default_config_name_wd_is_cwd,
                              test_simple_config_fail_when_default_graph_required_but_missing,
-                             test_simple_config_no_default_graph]
+                             test_simple_file_config_no_default_graph]
 
 INTEGRATION_TESTS_SPEED_4 = [test_dbpedia_local_archives, test_dbpedia_local_archives_list,
                              test_dbpedia_download_archives, test_dbpedia_download_archives_list]
@@ -244,7 +279,7 @@ class ImportIntegrationTest(object):
     @classmethod
     def _is_import_completed_msg(cls, line):
         try:
-            next(cls._import_completed_pattern().finditer(line))
+            next(cls._import_completed_pattern().finditer(line.decode('utf-8')))
             return True
         except StopIteration:
             return False
@@ -326,8 +361,8 @@ if __name__ == '__main__':
     import dld
     import sure
 
-    test_simple_config_with_dataset_from_cli_args()
-    test_simple_config_no_default_graph()
+    test_simple_config_with_import_file_from_cli_args()
+    test_simple_file_config_no_default_graph()
     test_simple_config_fail_when_default_graph_required_but_missing()
     test_dbpedia_local_archives()
     test_dbpedia_local_archives_list()
