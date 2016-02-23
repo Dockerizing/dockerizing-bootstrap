@@ -1,7 +1,5 @@
 docker-py >= 1.0
 docker-compose >= 1.5.2
-future
-futures
 pyyaml
 httplib2
 requests <2.8,>=2.6.1
