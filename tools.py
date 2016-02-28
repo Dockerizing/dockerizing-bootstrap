@@ -1,3 +1,4 @@
+from collections import defaultdict
 from os import path as osp
 import re
 import socket

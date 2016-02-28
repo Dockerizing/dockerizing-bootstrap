@@ -33,7 +33,7 @@ def test_simple_config_with_import_file_from_cli_args():
     config_file = osp.join(TEST_DIR, 'simple-dld.yml')
     osp.isfile(config_file).should.be(True)
     osp.isfile(import_file).should.be(True)
-    dld_args = ['-f', import_file, '-u', graph_name, '-c', config_file]
+    dld_args = ['-f', import_file, '-g', graph_name, '-c', config_file]
     expected_counts = {'http://dld.aksw.org/testing#': 1}
     with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
         test.run()
@@ -49,7 +49,7 @@ def test_simple_config_with_import_location_from_cli_args():
     import_loc = 'https://raw.githubusercontent.com/Dockerizing/dockerizing-bootstrap/master/tests/single_triple.ttl'
     config_file = osp.join(TEST_DIR, 'simple-dld.yml')
     osp.isfile(config_file).should.be(True)
-    dld_args = ['-l', import_loc, '-u', graph_name, '-c', config_file]
+    dld_args = ['-l', import_loc, '-g', graph_name, '-c', config_file]
     expected_counts = {'http://dld.aksw.org/testing#': 1}
     with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
         test.run()
@@ -68,7 +68,7 @@ def test_simple_config_default_config_name_wd_is_cwd():
     config_file = osp.join(TEST_DIR, 'simple-dld.yml')
     osp.isfile(config_file).should.be(True)
     osp.isfile(import_file).should.be(True)
-    dld_args = ['-f', 'single_triple.ttl', '-u', graph_name, '-w', '.']
+    dld_args = ['-f', 'single_triple.ttl', '-g', graph_name, '-w', '.']
     expected_counts = {'http://dld.aksw.org/testing#': 1}
     with ImportIntegrationTest(test_name, dld_args, expected_triple_counts=expected_counts) as test:
         shutil.copy(import_file, test.tmpdir)

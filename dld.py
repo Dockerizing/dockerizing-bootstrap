@@ -249,6 +249,7 @@ def build_argument_parser():
         'target-named-graph': "named graph as destination for LD to import specified with the -f or -l option",
         'dump-file': "LD dump file to import into RDF storage solution",
         'dump-location': "location (as URL) of dump file to download and import into RDF storage solution",
+        'do-up' : "let this script run 'docker-compose up' after successful preperation of the DLD setup",
         'help': "print this usage/help info"
     }
 
@@ -262,14 +263,28 @@ def build_argument_parser():
     parser = ap.ArgumentParser(prog='dld.py', description=helptexts['app_descr'], epilog=helptexts['app_epilog'])
     parser.add_argument("-c", "--config-file", default='dld.yml', help=helptexts['config-file'])
     parser.add_argument("-w", "--working-dir", default=None, help=helptexts['working-dir'])
-    parser.add_argument("-u", "--target-named-graph", default=None,
+    parser.add_argument("-g", "--target-named-graph", default=None,
                         help=helptexts['target-named-graph'])
     parser.add_argument("-f", "--dump-file", type=file_realpath, default=None,
                         help=helptexts['dump-file'])
     parser.add_argument("-l", "--dump-location", default=None, type=http_url,
                         help=helptexts['dump-location'])
+    parser.add_argument("-u", "--do-up", action='store_true',
+                        help=helptexts['do-up'])
+    parser.set_defaults(do_up=False)
+
 
     return parser
+
+def run_compose(*cli_args):
+    prev_argv = sys.argv
+    try:
+        sys.argv = ['docker-compose'] + list(cli_args)
+        from compose.cli import main as docker_main
+        docker_main.main()
+    finally:
+        sys.argv = prev_argv
+
 
 def main(args=sys.argv[1:]):
     argparser = build_argument_parser()
@@ -323,7 +338,13 @@ def main(args=sys.argv[1:]):
     # start dld process
     configurator = ComposeConfigGenerator(yaml_config, dld_config)
     configurator.run()
-    DLD_LOG.info(configurator.wd_ready_message)
+    if args_ns.do_up:
+        msg_templ = "Finished preparing compose setup. Changing to '{wd}' and performing 'docker-compose up'..."
+        DLD_LOG.info(msg_templ.format(wd = dld_config.working_dir))
+        os.chdir(dld_config.working_dir)
+        run_compose("up")
+    else:
+        DLD_LOG.info(configurator.wd_ready_message)
 
 
 if __name__ == "__main__":
