@@ -119,6 +119,9 @@ class ComposeConfigGenerator(object):
             settings_handler(merged_settings, compose_container_spec)
         if callable(additional_config_thunk):
             additional_config_thunk(compose_container_spec)
+        if self.dld_config.additional_volumes_from:
+            self.log.info("adding volumes from meta-container: {l}".format(l=self.dld_config.additional_volumes_from))
+            compose_container_spec['volumes_from'] += self.dld_config.additional_volumes_from
 
     def create_compose_config(self):
         self.configure_compose()
@@ -159,15 +162,17 @@ class ComposeConfigGenerator(object):
             self._steps_done['store'] = True
 
     def configure_load(self):
-        def additional_config(compose_container_spec):
-            compose_container_spec['links'].append('store')
+        def additional_config(load_component_spec):
+            load_component_spec['links'].append('store')
             # TODO This might also be done by reading the labels of the load container resp. for the other categories.
-            # A stub for loding the images and reading the labels is in pull_images
-            compose_container_spec['volumes_from'].append('store')
-            import_vol_dest = '/import'
-            if self.dld_config.selinux_volumes_tweaks_supported:
-                import_vol_dest += ':z'
-            compose_container_spec['volumes'] = [osp.abspath(self.dld_config.models_dir) + ":" + import_vol_dest]
+            # A stub for loading the images and reading the labels is in pull_images
+            load_component_spec['volumes_from'].append('store')
+            import_vol_dest = self.dld_config.import_volume_destination
+            load_component_spec['environment']['IMPORT_SRC'] = import_vol_dest
+            if not self.dld_config.internal_import_volume:
+                if self.dld_config.selinux_volumes_tweaks_supported:
+                    import_vol_dest += ':z'
+                load_component_spec['volumes'] = [osp.abspath(self.dld_config.models_dir) + ":" + import_vol_dest]
 
         if not self._steps_done['load']:
             self._configure_singleton_component('load', additional_config_thunk=additional_config)

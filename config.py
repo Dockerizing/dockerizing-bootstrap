@@ -1,9 +1,13 @@
 import re
-from os import path as osp
+from os import path as osp, environ as env
 
 from dldbase import dockerutil
 
 SELINUX_VOLUME_ADJUSTMENT_DOCKER_VERSIONS_PATTERN = re.compile('^(1\.([7-9]|(\d\d)))|(2\.)')
+ADDITIONAL_VOLUMES_FROM_ENV_VAR = "DLD_VOLUMES_FROM"
+INTERNAL_IMPORT_VOLUME_ENV_VAR = "DLD_INTERNAL_IMPORT"
+IMPORT_VOLUME_MOUNTPOINT_ENV_VAR = "DLD_IMPORT_MOUNT"
+
 
 class DLDConfig(object):
     __required_settings = {'working_dir': str, 'models_dir': str}
@@ -22,6 +26,27 @@ class DLDConfig(object):
                 return osp.join(self.working_dir, 'models')
             else:
                 raise RuntimeError("working directory not set")
+
+    @property
+    def additional_volumes_from(self):
+        env_value = env.get(ADDITIONAL_VOLUMES_FROM_ENV_VAR, '')
+        splitted = env_value.split(',')
+        if len(splitted) == 1 and (not splitted[0]):
+            return None
+        else:
+            return splitted
+
+    @property
+    def internal_import_volume(self):
+        env_value = env.get(INTERNAL_IMPORT_VOLUME_ENV_VAR, '')
+        if env_value == "0" or "false".startswith(env_value.lower()):
+            return False
+        else:
+            return bool(env_value)
+
+    @property
+    def import_volume_destination(self):
+        return env.get(IMPORT_VOLUME_MOUNTPOINT_ENV_VAR, '/import')
 
     with dockerutil.docker_client() as dc:
         __docker_engine_version = dc.version()['Version']
