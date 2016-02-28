@@ -16,8 +16,6 @@ COPY baselibs/ /dld/baselibs/
 
 COPY data/ /dld/data/
 
-COPY dist-configurations/ /dld/dist-configurations/
-
 RUN pip3 install --no-cache-dir -r /dld/requirements.txt
 
 ENTRYPOINT ["python3", "/dld/dld.py"]
