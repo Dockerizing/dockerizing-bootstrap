@@ -75,8 +75,6 @@ class ComposeConfigGenerator(object):
     @classmethod
     def _generic_settings_handler(cls, component_settings, compose_container_spec):
         if 'default_graph' in component_settings:
-            if 'environment' not in compose_container_spec:
-                compose_container_spec['environment'] = dict()
             compose_container_spec['environment']['DEFAULT_GRAPH'] = component_settings['default_graph']
 
     def _configure_singleton_component(self, component_name, settings_handler=None, additional_config_thunk=None):
@@ -335,7 +333,7 @@ if __name__ == "__main__":
     if os.getcwd() != PROJECT_DIR:
         sys.path.append(PROJECT_DIR)
 
-    #deferred imports, since PYTHONPATH needed to be tweaked before (interim solution)
+    # deferred imports, since PYTHONPATH needed to be tweaked before (interim solution)
     from dldbase import DEV_MODE, logutil
 
     logutil.logging_init(osp.join(PROJECT_DIR, 'logs'))
